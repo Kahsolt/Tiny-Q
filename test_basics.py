@@ -51,8 +51,8 @@ q.info('H|00>')
 assert H | v0 != H | v1
 assert h0 != S | h0
 # but global phase it omittable
-h0_gp = State(np.exp(np.pi/3*1j) * h0.v)
-h0_gp.info('e^φi|+> (global phase)')
+h0_gp = Ph(np.pi/3) | h0
+h0_gp.info('e^-φi|+> (global phase)')
 assert h0 == h0_gp
 
 

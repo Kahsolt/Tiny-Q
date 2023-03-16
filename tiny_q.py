@@ -10,8 +10,10 @@ import seaborn as sns
 import numpy as np
 np.set_printoptions(precision=4, suppress=True)
 np.seterr(divide='ignore', invalid='ignore')
+from numpy import e, pi, sin, cos, exp
 
 EPS = 1e-6
+i = np.complex64(0 + 1j)    # imaginary unit
 
 
 class Meta:
@@ -241,7 +243,7 @@ class Gate(Meta):
 
   def __pow__(self, pow: float):
     ''' H ** pow: gate self-power '''
-    assert isinstance(pow, [float, int]), f'pow should be numerical type but got {type(pow)}'
+    assert isinstance(pow, (float, int)), f'pow should be numerical type but got {type(pow)}'
     return Gate(np.linalg.matrix_power(self.v, pow))
 
   def __mul__(self, other: Gate) -> Gate:
@@ -276,71 +278,102 @@ class Gate(Meta):
 
 
 # https://en.wikipedia.org/wiki/List_of_quantum_logic_gates
-I = Gate([
+I = Gate([                    # indentity
   [1, 0],
   [0, 1],
 ])
-X = NOT = Gate([
+Ph = lambda theta: Gate([     # alter global phase, exp(-i*theta*I)
+  [exp(i*theta), 0],
+  [0, exp(i*theta)],
+])
+X = NOT = Gate([              # flip amplitude
   [0, 1],
   [1, 0],
 ])
-Y = Gate([
-  [0, -1j],
-  [1j, 0],
+Y = Gate([                    # flip amplitude & flip phase by imag
+  [0, -i],
+  [i,  0],
 ])
-Z = Gate([    # Z = P(pi)
+Z = Gate([                    # flip phase by real, Z = P(pi)
   [1,  0],
-  [0, -1],
+  [0, -1],                    # e**(i*pi) == -1
 ])
-H = Gate(np.asarray([
+H = Gate(np.asarray([         # scatter basis, make superposition
   [1,  1],
   [1, -1],
 ]) / np.sqrt(2))
-P = lambda phi: Gate([
+SX = V = Gate(np.asarray([    # sqrt(X)
+  [1 + i, 1 - i],
+  [1 - i, 1 + i],
+]) / 2)
+P = lambda phi: Gate([        # alter phase
   [1, 0],
-  [0, np.e**(phi*1j)],
+  [0, e**(i*phi)],
 ])
-S = Gate([    # S = Z**(1/2) = P(pi/2)
+S = Gate([                    # alter phase, S = Z**(1/2) = P(pi/2)
   [1, 0],
-  [0, np.e**(np.pi/2*1j)],
+  [0, e**(i*pi/2)],           # e**(i*pi/2) == i
 ])
-T = Gate([    # T = S**(1/2) = Z**(1/4)
+T = Gate([                    # alter phase, T = S**(1/2) = Z**(1/4) = P(pi/4)
   [1, 0],
-  [0, np.e**(np.pi/4*1j)],
+  [0, e**(i*pi/4)],           # e**(i*pi/4) == (1+i)/sqrt(2)
 ])
-RX = lambda theta: Gate([
-  [np.cos(theta/2), -1j*np.sin(theta/2)],
-  [-1j*np.sin(theta/2), np.cos(theta/2)],
+RX = lambda theta: Gate([     # alter amplitude, exp(-i*X*theta/2)
+  [cos(theta/2), -i*sin(theta/2)],
+  [-i*sin(theta/2), cos(theta/2)],
 ])
-RY = lambda theta: Gate([
-  [np.cos(theta/2), -np.sin(theta/2)],
-  [np.sin(theta/2),  np.cos(theta/2)],
+RY = lambda theta: Gate([     # alter amplitude, exp(-i*Y*theta/2)
+  [cos(theta/2), -sin(theta/2)],
+  [sin(theta/2),  cos(theta/2)],
 ])
-RZ = lambda theta: Gate([
-  [np.exp(-theta/2*1j), 0],
-  [0, np.exp(theta/2*1j)],
+RZ = lambda theta: Gate([     # alter phase, exp(-i*Z*theta/2)
+  [exp(-i*theta/2), 0],
+  [0, exp(i*theta/2)],
+])
+RZ1 = lambda theta: Gate([    # another form of RZ except a g_phase of exp(i*theta/2)
+  [1, 0],
+  [0, exp(i*theta)],
 ])
 U = lambda theta, phi, lmbd: Gate([
-  [np.cos(theta/2), -np.exp(-1j*lmbd)*np.sin(theta/2)],
-  [np.exp(-1j*phi)*np.sin(theta/2), np.exp(1j*(lmbd+phi))*np.cos(theta/2)],
+  [cos(theta/2), -exp(-i*lmbd)*sin(theta/2)],
+  [exp(-i*phi)*sin(theta/2), exp(i*(lmbd+phi))*cos(theta/2)],
 ])
+U1 = lambda alpha, beta, gamma, delta: Ph(alpha) * RZ(beta) * RY(gamma) * RZ(delta)     # universal Z-Y decomposition
 SWAP = Gate([
   [1, 0, 0, 0],
   [0, 0, 1, 0],
   [0, 1, 0, 0],
   [0, 0, 0, 1],
 ])
-iSWAP = Gate([
-  [1,  0,  0, 0],
-  [0,  0, 1j, 0],
-  [0, 1j,  0, 0],
-  [0,  0,  0, 1],
+iSWAP = Gate([                # SWAP while flip relative phase 
+  [1, 0, 0, 0],
+  [0, 0, i, 0],
+  [0, i, 0, 0],
+  [0, 0, 0, 1],
 ])
-CNOT = Gate([
+fSWAP = Gate([
+  [1, 0, 0,  0],
+  [0, 0, 1,  0],
+  [0, 1, 0,  0],
+  [0, 0, 0, -1],
+])
+CNOT = CX = Gate([             # make entanglement
   [1, 0, 0, 0],
   [0, 1, 0, 0],
   [0, 0, 0, 1],
   [0, 0, 1, 0],
+])
+DCNOT = Gate([
+  [1, 0, 0, 0],
+  [0, 0, 1, 0],
+  [0, 0, 0, 1],
+  [0, 1, 0, 0],
+])
+CZ = Gate([
+  [1, 0, 0,  0],
+  [0, 1, 0,  0],
+  [0, 0, 1,  0],
+  [0, 0, 0, -1],
 ])
 CCNOT = Toffoli = Gate([
   [1, 0, 0, 0, 0, 0, 0, 0],
@@ -369,4 +402,31 @@ M1 = MeasureOp([
   [0, 0],
   [0, 1],
 ])
-assert MeasureOp.check_completeness([M0, M1])
+
+
+if __name__ == '__main__':
+  # => basic states
+  assert (v0 > v1) < EPS and (v1 > v0) < EPS        # diagonal
+  assert (h0 > h1) < EPS and (h1 > h0) < EPS
+  for q1 in [v0, v1, h0, h1]:
+    for q2 in [v0, v1, h0, h1]:
+      if q1 == q2: assert (q1 > q2) - 1   < EPS
+      else:        assert (q1 > q2) - 0.5 < EPS
+
+  # => global phase gate
+  assert Ph(0) == I
+  assert Ph(pi) == Ph(-pi) == Gate(-I.v)
+
+  # => pauli gates
+  assert X**2 == I and Y**2 == I and Z**2 == I
+  assert H*Z*H == X and H*X*H == Z
+  assert X*Y == Ph(-pi)*Y*X and Y*Z == Ph(-pi)*Z*Y and Z*X == Ph(-pi)*X*Z     # here Ph(-pi)*U == -U
+  assert Gate(((X*Y).v-(Y*X).v)/2) == Gate(i*Z.v)                             # σiσj - σjσi = 2*i*σk, where i,j,k is a cyclic permutation of of X,Y,Z
+
+  # => phase gates
+  assert SX **2 == X
+  assert T**2 == S and S**2 == Z and Z**2 == I
+  assert Z == P(pi) and S == P(pi/2) and T == P(pi/4)
+
+  # => measure operator set
+  assert MeasureOp.check_completeness([M0, M1])
