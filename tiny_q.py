@@ -7,6 +7,7 @@ from typing import List, Dict, Union, Callable, Any
 
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.linalg import fractional_matrix_power
 import numpy as np
 np.set_printoptions(precision=4, suppress=True)
 np.seterr(divide='ignore', invalid='ignore')
@@ -244,7 +245,10 @@ class Gate(Meta):
   def __pow__(self, pow: float):
     ''' H ** pow: gate self-power '''
     assert isinstance(pow, (float, int)), f'pow should be numerical type but got {type(pow)}'
-    return Gate(np.linalg.matrix_power(self.v, pow))
+    if isinstance(pow, int):
+      return Gate(np.linalg.matrix_power(self.v, pow))
+    else:
+      return Gate(fractional_matrix_power(self.v, pow))
 
   def __mul__(self, other: Gate) -> Gate:
     ''' H * X = HX: compose two unitary transforms up '''
