@@ -65,7 +65,8 @@ class Gate(Meta):
   .is_unitary -> bool           # unitary (should always be True)
   .is_hermitian -> bool         # hermitian (True for most gates)
   .__eq__() -> bool             # gate equality
-  .__pow__() -> Gate            # H**alpha, gate self-power
+  .__neg__() -> Gate            # -H, global negative
+  .__xor__() -> Gate            # H^alpha, gate self-power
   .__mul__() -> Gate            # X * H: gate composition
   .__matmul__() -> Gate         # X @ H: gate expansion
   .__or__() -> State            # X | v0: gate application

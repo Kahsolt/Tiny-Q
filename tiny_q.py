@@ -11,6 +11,7 @@ from scipy.linalg import fractional_matrix_power
 import numpy as np
 np.set_printoptions(precision=4, suppress=True)
 np.seterr(divide='ignore', invalid='ignore')
+np.bitwise_xor = np.power
 from numpy import e, pi, sin, cos, exp
 
 EPS = 1e-6
@@ -50,7 +51,7 @@ class State(Meta):
 
   @property
   def is_pure(self) -> bool:
-    ''' pure state: trace of density matrix equals to 1.0, or rho == rho**2 '''
+    ''' pure state: trace of density matrix equals to 1.0, or rho == rho^2 '''
     return self.trace >= 1.0 - EPS
 
   @classmethod
@@ -104,7 +105,7 @@ class State(Meta):
         results[self > Measure] += 1
       return results
     elif isinstance(other, State):
-      ''' p = |<phi|psi>|**2 '''
+      ''' p = |<phi|psi>|^2 '''
       return np.abs(np.inner(self.v, other.v)) ** 2
     elif isinstance(other, MeasureOp):
       ''' p(i) = <phi| Mi.dagger * Mi |phi> '''
@@ -119,7 +120,7 @@ class State(Meta):
 
   @property
   def prob(self) -> np.ndarray:
-    ''' |phi> = Σαi|i>, probability of i-th basis prob(|i>) = abs(αi)**2 '''
+    ''' |phi> = Σαi|i>, probability of i-th basis prob(|i>) = |αi|^2 '''
     return self.amp ** 2
 
   @property
@@ -229,6 +230,10 @@ class Gate(Meta):
     ''' hermitian: A.dagger == A '''
     return np.abs(self.v.conj().T - self.v).max() < EPS
 
+  def __neg__(self) -> Gate:
+    ''' Ph(-pi)*U == -U '''
+    return Ph(-pi) | self
+
   def __eq__(self, other: Any) -> bool:
     if not isinstance(other, Gate): raise NotImplemented
 
@@ -243,7 +248,11 @@ class Gate(Meta):
     return np.abs(self.v - gate.v).max() < EPS
 
   def __pow__(self, pow: float):
-    ''' H ** pow: gate self-power '''
+    ''' H**pow: gate self-power '''
+    return self.__xor__(pow)
+
+  def __xor__(self, pow: float):
+    ''' H^pow: gate self-power '''
     assert isinstance(pow, (float, int)), f'pow should be numerical type but got {type(pow)}'
     if isinstance(pow, int):
       return Gate(np.linalg.matrix_power(self.v, pow))
@@ -300,7 +309,7 @@ Y = Gate([                    # flip amplitude & flip phase by imag
 ])
 Z = Gate([                    # flip phase by real, Z = P(pi)
   [1,  0],
-  [0, -1],                    # e**(i*pi) == -1
+  [0, -1],                    # e^(i*pi) == -1
 ])
 H = Gate(np.asarray([         # scatter basis, make superposition
   [1,  1],
@@ -312,15 +321,15 @@ SX = V = Gate(np.asarray([    # sqrt(X)
 ]) / 2)
 P = lambda phi: Gate([        # alter phase
   [1, 0],
-  [0, e**(i*phi)],
+  [0, exp(i*phi)],
 ])
-S = Gate([                    # alter phase, S = Z**(1/2) = P(pi/2)
+S = Gate([                    # alter phase, S = Z^(1/2) = P(pi/2)
   [1, 0],
-  [0, e**(i*pi/2)],           # e**(i*pi/2) == i
+  [0, exp(i*pi/2)],           # e^(i*pi/2) == i
 ])
-T = Gate([                    # alter phase, T = S**(1/2) = Z**(1/4) = P(pi/4)
+T = Gate([                    # alter phase, T = S^(1/2) = Z^(1/4) = P(pi/4)
   [1, 0],
-  [0, e**(i*pi/4)],           # e**(i*pi/4) == (1+i)/sqrt(2)
+  [0, exp(i*pi/4)],           # e^(i*pi/4) == (1+i)/sqrt(2)
 ])
 RX = lambda theta: Gate([     # alter amplitude, exp(-i*X*theta/2)
   [cos(theta/2), -i*sin(theta/2)],
@@ -410,7 +419,7 @@ M1 = MeasureOp([
 
 if __name__ == '__main__':
   # => basic states
-  assert (v0 > v1) < EPS and (v1 > v0) < EPS        # diagonal
+  assert (v0 > v1) < EPS and (v1 > v0) < EPS            # diagonal
   assert (h0 > h1) < EPS and (h1 > h0) < EPS
   for q1 in [v0, v1, h0, h1]:
     for q2 in [v0, v1, h0, h1]:
@@ -422,14 +431,14 @@ if __name__ == '__main__':
   assert Ph(pi) == Ph(-pi) == Gate(-I.v)
 
   # => pauli gates
-  assert X**2 == I and Y**2 == I and Z**2 == I
+  assert X^2 == I and Y^2 == I and Z^2 == I
   assert H*Z*H == X and H*X*H == Z
-  assert X*Y == Ph(-pi)*Y*X and Y*Z == Ph(-pi)*Z*Y and Z*X == Ph(-pi)*X*Z     # here Ph(-pi)*U == -U
-  assert Gate(((X*Y).v-(Y*X).v)/2) == Gate(i*Z.v)                             # σiσj - σjσi = 2*i*σk, where i,j,k is a cyclic permutation of of X,Y,Z
+  assert X*Y == -Y*X and Y*Z == -Z*Y and Z*X == -X*Z 
+  assert Gate(((X*Y).v-(Y*X).v)/2) == Gate(i*Z.v)       # σiσj - σjσi = 2*i*σk, where i,j,k is a cyclic permutation of of X,Y,Z
 
   # => phase gates
-  assert SX **2 == X
-  assert T**2 == S and S**2 == Z and Z**2 == I
+  assert SX^2 == X
+  assert T^2 == S and S^2 == Z and Z^2 == I
   assert Z == P(pi) and S == P(pi/2) and T == P(pi/4)
 
   # => measure operator set
