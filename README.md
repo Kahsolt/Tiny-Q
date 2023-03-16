@@ -39,24 +39,29 @@ p = h0 > M0
 ⚪ API stubs
 
 ```python
-class State:
-  .n_qubits -> int
+class Meta:
+  .n_qubits -> int              # qubit count of current system
+
+class State(Meta):
   .is_pure -> bool
-  .zero()                       # alloc |0>s
-  .one()                        # alloc |1>s
-  .amp -> np.ndarray            # amplitude
-  .prob -> np.ndarray           # probabilty distribution
-  .plot_prob()                  # plot probabilty distribution
-  .density -> np.ndarray        # density matrix
-  .plot_density()               # plot density matrix
-  .trace -> float               # trace of density matrix
+  .zero() -> State              # alloc a |0> string
+  .one() -> State               # alloc a |1> string
   .__eq__() -> bool             # state equality (ignoring global phase)
   .__matmul__() -> State        # v0 @ v1, state expansion
-  .__gt__() -> str              # v0 > Measure|Measure()|State|MeasureOp, various measurements
+  .__gt__() -> Union            # v0 > Measure|Measure()|State|MeasureOp, various measurements
+  .amp -> np.ndarray            # amplitude
+  .prob -> np.ndarray           # probabilty distribution
+  .density -> np.ndarray        # density matrix
+  .trace -> float               # trace of density matrix
   .info()                       # quick show info
+  .plot_prob()                  # plot probabilty distribution
+  .plot_density()               # plot density matrix
+  .plots()                      # plot all figures
 
-class Gate:
-  .n_qubits -> int
+class MeasureOp(Meta):
+  .check_completeness() -> bool
+
+class Gate(Meta):
   .is_unitary -> bool           # unitary (should always be True)
   .is_hermitian -> bool         # hermitian (True for most gates)
   .__eq__() -> bool             # gate equality

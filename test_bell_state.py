@@ -9,7 +9,9 @@ from tiny_q import *
 
 bell_state = CNOT * (H @ I) | State.zero(2)
 bell_state.info()
+
 print('results:', bell_state > Measure())
+
 bell_state.plots('bell state')
 
 
@@ -18,5 +20,7 @@ bell_state.plots('bell state')
 
 ghz_state = (I @ CNOT) * (CNOT @ I) * (H @ I @ I) | State.zero(3)
 ghz_state.info()
+
 print('results:', ghz_state > Measure())
+
 ghz_state.plots('ghz state')
