@@ -290,6 +290,15 @@ class Gate(Meta):
     print()
 
 
+def v(string: str) -> State:
+  assert string, 'string should not be empty'
+  qubits = { '0': v0, '1': v1 }
+  v = qubits[string[0]]
+  for c in string[1:]:
+    v = v @ qubits[c]
+  return v
+
+
 # https://en.wikipedia.org/wiki/List_of_quantum_logic_gates
 I = Gate([                    # indentity
   [1, 0],
@@ -370,7 +379,7 @@ fSWAP = Gate([
   [0, 1, 0,  0],
   [0, 0, 0, -1],
 ])
-CNOT = CX = Gate([             # make entanglement
+CNOT = CX = Gate([            # make entanglement
   [1, 0, 0, 0],
   [0, 1, 0, 0],
   [0, 0, 0, 1],
@@ -425,6 +434,8 @@ if __name__ == '__main__':
     for q2 in [v0, v1, h0, h1]:
       if q1 == q2: assert (q1 > q2) - 1   < EPS
       else:        assert (q1 > q2) - 0.5 < EPS
+  assert v('0') == v0 and v('1') == v1
+  assert v('10110') == v1 @ v0 @ v1 @ v1 @ v0
 
   # => global phase gate
   assert Ph(0) == I
