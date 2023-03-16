@@ -13,3 +13,14 @@ print('state:', bell_state)
 print('results:', bell_state.measure())
 
 bell_state.plot_density('bell state')
+
+
+# GHZ state
+# https://en.wikipedia.org/wiki/Greenberger%E2%80%93Horne%E2%80%93Zeilinger_state
+
+ghz_state = (I @ CNOT) * (CNOT @ I) * (H @ I @ I) | State.zero(3)
+
+print('state:', ghz_state)
+print('results:', ghz_state.measure())
+
+ghz_state.plot_density('ghz state')

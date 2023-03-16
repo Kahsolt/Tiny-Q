@@ -2,8 +2,10 @@
 # Author: Armit
 # Create Time: 2023/03/15 
 
+from typing import Dict
+
 import numpy as np
-np.set_printoptions(precision=5, suppress=True)
+np.set_printoptions(precision=4, suppress=True)
 
 EPS = 1e-6
 
@@ -32,7 +34,7 @@ class State:
   @property
   def is_pure(self) -> bool:
     ''' pure state: trace of density matrix equals to 1.0 '''
-    return np.abs(np.trace(self.density)).sum() >= 1.0 - EPS
+    return self.trace >= 1.0 - EPS
 
   def __str__(self):
     return str(self.v)
@@ -44,7 +46,6 @@ class State:
   def zero(cls, n:int=1):
     assert n >= 1, 'n_qubit should >= 1'
     assert isinstance(n, int), 'n_qubit should be int'
-
     v = [0] * 2**n ; v[0] = 1
     return cls(v)
 
@@ -52,27 +53,26 @@ class State:
   def one(cls, n:int=1):
     assert n >= 1, 'n_qubit should >= 1'
     assert isinstance(n, int), 'n_qubit should be int'
-
     v = [0] * 2**n ; v[-1] = 1
     return cls(v)
 
   def __eq__(self, other):
+    ''' v0 == v1: state equality ignores the global phase '''
     assert isinstance(other, State), f'other should be a State, but got {type(other)}'
-    return np.abs(self.v - other.v).mean() < EPS
+    return np.abs(np.abs(self.v) - np.abs(other.v)).max() < EPS
 
   def __matmul__(self, other):
     ''' v0 @ v1 = |0>|1>: tensor dot of two quantum systems '''
     assert isinstance(other, State), f'other should be a State, but got {type(other)}'
     return State(np.kron(self.v, other.v))
 
-  def __gt__(self, other):
+  def __gt__(self, other) -> str:
     ''' v0 > Measure: measure prob '''
     assert other is Measure, f'other must be Measure, but get {type(other)}({other})'
-
     cstates = [bin(x)[2:] for x in range(2**self.n_qubits)]
     return np.random.choice(a=cstates, replace=True, p=self.prob)
 
-  def measure(self, n=1000):
+  def measure(self, n=1000) -> Dict[str, int]:
     results = {bin(x)[2:]: 0 for x in range(2**self.n_qubits)}
     for _ in range(n):
       results[self > Measure] += 1
@@ -89,6 +89,10 @@ class State:
   @property
   def density(self):
     return np.outer(self.v, self.v)
+
+  @property
+  def trace(self):
+    return np.abs(np.trace(self.density)).sum()
 
   def plot_density(self, title=None):
     import matplotlib.pyplot as plt
@@ -122,7 +126,7 @@ class Gate:
 
   @staticmethod
   def _is_unitary(v: np.ndarray) -> bool:
-    return np.abs(np.matmul(v, v.conj().T) - np.eye(2**int(np.log2(v.shape[0])))).mean() < EPS
+    return np.abs(np.matmul(v, v.conj().T) - np.eye(2**int(np.log2(v.shape[0])))).max() < EPS
 
   @property
   def shape(self):
@@ -140,7 +144,7 @@ class Gate:
   @property
   def is_hermitian(self) -> bool:
     ''' hermitian: A.dagger == A '''
-    return np.abs(self.v.conj().T - self.v).mean() < EPS
+    return np.abs(self.v.conj().T - self.v).max() < EPS
 
   def __str__(self):
     return str(self.v)
@@ -148,15 +152,28 @@ class Gate:
   def __repr__(self):
     return repr(self.v)
 
+  def __eq__(self, other):
+    assert isinstance(other, Gate), f'other should be a Gate, but got {type(other)}'
+
+    if self.n_qubits > 1 and other is I:   # auto broadcast
+      gate = other
+      for _ in range(1, self.n_qubits):
+        gate = gate @ other
+    else:
+      assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
+      gate = other
+
+    return np.abs(self.v - gate.v).max() < EPS
+
   def __pow__(self, pow: float):
+    ''' H ** pow: gate self-power '''
     assert isinstance(pow, [float, int]), f'pow must be numerical but got {type(pow)}'
     return Gate(np.linalg.matrix_power(self.v, pow))
 
   def __mul__(self, other):
     ''' H * X = HX: compose two unitary transforms up '''
     assert isinstance(other, Gate), f'other must be a State, but got {type(other)}'
-    assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits} '
-
+    assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
     return Gate(self.v @ other.v)
 
   def __matmul__(self, other):
@@ -171,9 +188,9 @@ class Gate:
     if self.n_qubits == 1 and other.n_qubits > 1:   # auto broadcast
       gate = self
       for _ in range(1, other.n_qubits):
-        gate = gate @ gate
+        gate = gate @ self
     else:
-      assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits} '
+      assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
       gate = self
 
     return State(gate.v @ other.v)
