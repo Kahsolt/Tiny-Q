@@ -2,8 +2,10 @@
 # Author: Armit
 # Create Time: 2023/03/15 
 
-from typing import Dict
+from typing import Dict, Callable
 
+import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 np.set_printoptions(precision=4, suppress=True)
 np.seterr(divide='ignore', invalid='ignore')
@@ -11,18 +13,30 @@ np.seterr(divide='ignore', invalid='ignore')
 EPS = 1e-6
 
 
-class State:
+class Meta:
+
+  def __init__(self, v):
+    self.v = np.asarray(v, dtype=np.complex64)
+
+  @property
+  def shape(self):
+    return self.v.shape
+
+  @property
+  def n_qubits(self) -> int:
+    return int(np.log2(self.v.shape[0]))
+
+
+class State(Meta):
 
   ''' represents a state vector of a quantum system: might be one qubit, two qubits or more ... '''
 
-  def __init__(self, v: np.ndarray):
-    v = np.asarray(v, dtype=np.complex64)
+  def __init__(self, v):
+    super().__init__(v)
 
-    assert isinstance(v, np.ndarray), 'state vector should be np.ndarray type'
-    assert len(v.shape) == 1, 'state vector should be 1-dim array'
-    assert np.log2(v.shape[0]) % 1 == 0.0, 'state vector length should be power of 2'
-
-    self.v = v
+    assert isinstance(self.v, np.ndarray), 'state vector should be np.ndarray type'
+    assert len(self.shape) == 1, 'state vector should be 1-dim array'
+    assert np.log2(self.shape[0]) % 1 == 0.0, 'state vector length should be power of 2'
 
   @property
   def shape(self):
@@ -35,9 +49,10 @@ class State:
   @property
   def is_pure(self) -> bool:
     ''' pure state: trace of density matrix equals to 1.0, or rho == rho**2 '''
-    return np.abs(self.trace) >= 1.0 - EPS
+    return self.trace >= 1.0 - EPS
 
   def __str__(self):
+    ''' |phi> = Σαi|i>, pure state vector '''
     return str(self.v)
 
   def __repr__(self):
@@ -74,40 +89,59 @@ class State:
     assert isinstance(other, State), f'other should be a State, but got {type(other)}'
     return State(np.kron(self.v, other.v))
 
-  def __gt__(self, other) -> str:
-    ''' v0 > Measure: measure prob '''
-    assert other is Measure, f'other must be Measure, but get {type(other)}({other})'
-    return np.random.choice(a=self._cstates, replace=True, p=self.prob)
+  def __gt__(self, other) -> tuple[str, Dict[str, int], float]:
+    '''
+      v0 > Measure: project measure by computational basis, return result as binary string
+      v0 > Measure(n): project measure by computational basis, return results as a Dict[str, int]
+      v0 > MeasureOp|State: project measure by given measure operator Mi or state |psi>, return the collapse-to probability 
+    '''
 
-  def measure(self, n=1000) -> Dict[str, int]:
-    results = {stat: 0 for stat in self._cstates}
-    for _ in range(n):
-      results[self > Measure] += 1
-    return results
+    if other is Measure:
+      ''' one-shot measure '''
+      return np.random.choice(a=self._cstates, replace=True, p=self.prob)
+    elif isinstance(other, Callable):
+      ''' Monte-Carlo sample '''
+      n = other()
+      assert isinstance(n, int), f'count of Measure must be int type, but got {type(n)}'
+      results = {stat: 0 for stat in self._cstates}
+      for _ in range(n):
+        results[self > Measure] += 1
+      return results
+    elif isinstance(other, State):
+      ''' p = |<phi|psi>|**2 '''
+      return np.abs(np.inner(self.v, other.v)) ** 2
+    elif isinstance(other, MeasureOp):
+      ''' p(i) = <phi| Mi.dagger * Mi |phi> '''
+      return np.abs(self.v.T @ other.v.conj().T @ other.v @ self.v)
+    else:
+      raise TypeError(f'other should be a MeasureOp or a State, or the Measure object, but got {type(other)}({other})')
 
   @property
   def amp(self) -> np.ndarray:
+    ''' |phi> = Σαi|i>, amplitude of i-th basis amp(|i>) = abs(αi) '''
     return np.abs(self.v)
 
   @property
   def prob(self) -> np.ndarray:
+    ''' |phi> = Σαi|i>, probability of i-th basis prob(|i>) = abs(αi)**2 '''
     return self.amp ** 2
 
   @property
   def density(self):
-    ''' density matrix: rho := |v><v|
-          - diag(rho) indicates probability of each classic state it'll collapses into after measurement
-          - non-diag(rho) indicates **superpositioness** of the state, a pure mixed state is a simple diagonal matrix, 
-            non-diagonal cells are all zeros showing that no any superpositioness
-          - whether rho can be decomposed into tensor product of several smaller matrices indicates **entanglementness** of a multi-body system
+    '''
+      rho := |phi><phi| (pure state) or Σαi|i><i| (mixed state), density matrix
+        - diag(rho) indicates probability of each classic state it'll collapses into after measurement
+        - non-diag(rho) indicates **superpositioness** of the state, a pure mixed state is a simple diagonal matrix, 
+          non-diagonal cells are all zeros showing that no any superpositioness
+        - whether rho can be decomposed into tensor product of several smaller matrices indicates **entanglementness** of a multi-body system
     '''
     return np.outer(self.v, self.v)
 
   @property
-  def trace(self):
-    ''' trace of density matrix '''
-    return np.trace(self.density)
-  
+  def trace(self) -> float:
+    ''' tr(rho) = Σ|diag(rho)|: trace of density matrix '''
+    return np.abs(np.diag(self.density)).sum()
+
   @property
   def _cstates(self):
     return [bin(x)[2:].rjust(self.n_qubits, '0') for x in range(2**self.n_qubits)]
@@ -121,9 +155,7 @@ class State:
     print('  trace:', self.trace)
     print()
 
-  def plot_prob(self, title='prob dist'):
-    import matplotlib.pyplot as plt
-
+  def plot_prob(self, title='prob'):
     plt.clf()
     plt.bar(self._cstates, self.prob, color='royalblue', alpha=0.9)
     plt.ylim((0.0, 1.0))
@@ -132,38 +164,62 @@ class State:
     plt.show()
 
   def plot_density(self, title='density'):
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
     plt.clf()
     sns.heatmap(np.abs(self.density), annot=True, vmin=0, vmax=1, cbar=True, cmap='Blues', alpha=0.9)
     if title: plt.suptitle(title)
     plt.tight_layout()
     plt.show()
 
+  def plots(self, title='|phi>'):
+    plt.clf()
+    plt.subplot(121)
+    plt.title('prob')
+    plt.bar(self._cstates, self.prob, color='royalblue', alpha=0.9)
+    plt.ylim((0.0, 1.0))
+    plt.subplot(122)
+    plt.title('density')
+    sns.heatmap(np.abs(self.density), annot=True, vmin=0, vmax=1, cbar=True, cmap='Blues', alpha=0.9)
+    if title: plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
 
-v0 = State.zero()
-v1 = State.one()
+
+class MeasureOp(Meta):
+
+  def __init__(self, v):
+    super().__init__(v)
+
+    assert isinstance(self.v, np.ndarray), 'measure operator should be np.ndarray type'
+    assert len(self.shape) == 2, 'measure operator should be 2-dim array'
+    assert self.shape[0] == self.shape[1], 'measure operator should be square'
+    assert np.log2(self.shape[0]) % 1 == 0.0, 'measure operator size should be power of 2'
+
+  @staticmethod
+  def check_completeness(ops: list) -> bool:
+    ''' Σ(Mi.dagger * Mi) = I: completeness equation for a measure operator set '''
+
+    if not ops: return False
+    for op in ops: assert isinstance(op, MeasureOp), f'elem of ops should be a MeasureOp, but got {type(op)}'
+
+    s = np.zeros_like(ops[0].v)
+    for Mi in ops:
+      s += Mi.v.conj().T @ Mi.v
+    s -= np.eye(2**ops[0].n_qubits)
+    return np.abs(s).max() < EPS
 
 
-class Gate:
+class Gate(Meta):
 
   ''' represents a unitary transform, aka, a quantum gate matrix '''
 
   def __init__(self, v):
-    v = np.asarray(v, dtype=np.complex64)
+    super().__init__(v)
 
-    assert isinstance(v, np.ndarray), 'gate matrix should be np.ndarray type'
-    assert len(v.shape) == 2, 'gate matrix should be 2-dim array'
-    assert v.shape[0] == v.shape[1], 'gate matrix should be square'
-    assert np.log2(v.shape[0]) % 1 == 0.0, 'gate matrix size should be power of 2'
-    assert self._is_unitary(v), f'gate matrix should be unitary: {v}'
-
-    self.v = v
-
-  @staticmethod
-  def _is_unitary(v: np.ndarray) -> bool:
-    return np.abs(np.matmul(v, v.conj().T) - np.eye(2**int(np.log2(v.shape[0])))).max() < EPS
+    assert isinstance(self.v, np.ndarray), 'gate matrix should be np.ndarray type'
+    assert len(self.shape) == 2, 'gate matrix should be 2-dim array'
+    assert self.shape[0] == self.shape[1], 'gate matrix should be square'
+    assert np.log2(self.shape[0]) % 1 == 0.0, 'gate matrix size should be power of 2'
+    assert self.is_unitary, f'gate matrix should be unitary: {self.v}'
 
   @property
   def shape(self):
@@ -176,7 +232,7 @@ class Gate:
   @property
   def is_unitary(self) -> bool:
     ''' unitary: dot(A, A.dagger) == dot(A.dagger, A) = I '''
-    return self._is_unitary(self.v)
+    return np.abs(np.matmul(self.v, self.v.conj().T) - np.eye(2**self.n_qubits)).max() < EPS
 
   @property
   def is_hermitian(self) -> bool:
@@ -204,12 +260,12 @@ class Gate:
 
   def __pow__(self, pow: float):
     ''' H ** pow: gate self-power '''
-    assert isinstance(pow, [float, int]), f'pow must be numerical but got {type(pow)}'
+    assert isinstance(pow, [float, int]), f'pow should be numerical type but got {type(pow)}'
     return Gate(np.linalg.matrix_power(self.v, pow))
 
   def __mul__(self, other):
     ''' H * X = HX: compose two unitary transforms up '''
-    assert isinstance(other, Gate), f'other must be a State, but got {type(other)}'
+    assert isinstance(other, Gate), f'other should be a State, but got {type(other)}'
     assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
     return Gate(self.v @ other.v)
 
@@ -220,7 +276,7 @@ class Gate:
 
   def __or__(self, other: State) -> State:
     ''' H | v0 = H|0>: apply this unitary transform on a state '''
-    assert isinstance(other, State), f'other must be a State, but got {type(other)}'
+    assert isinstance(other, State), f'other should be a State, but got {type(other)}'
 
     if self.n_qubits == 1 and other.n_qubits > 1:   # single-qubit gate auto broadcast
       gate = self
@@ -316,4 +372,20 @@ CCNOT = Toffoli = Gate([
   [0, 0, 0, 0, 0, 0, 1, 0],
 ])
 
-Measure = object()
+v0 = State.zero()   # |0>
+v1 = State.one()    # |1>
+h0 = H | v0         # |+>
+h1 = H | v1         # |->
+bell_state = CNOT * (H @ I) | State.zero(2)  # |00>+|11>
+ghz_state = (I @ CNOT) * (CNOT @ I) * (H @ I @ I) | State.zero(3)   # |000>+|111>
+
+Measure = lambda n=1000: (lambda: n)
+M0 = MeasureOp([
+  [1, 0],
+  [0, 0],
+])
+M1 = MeasureOp([
+  [0, 0],
+  [0, 1],
+])
+assert MeasureOp.check_completeness([M0, M1])

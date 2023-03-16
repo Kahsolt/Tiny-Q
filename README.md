@@ -25,10 +25,15 @@ u = H @ I
 #q = State @ State
 q = v0 @ v1
 
-# use > for measurement
-# r = State > Measure
+# use > for measurements
+# r = State > Measure, single measure
 r = H | v0 > Measure
-r = CNOT * (H @ I) | State.zero(2) > Measure
+# r = State > Measure(count), bunch measure
+r = CNOT * (H @ I) | State.zero(2) > Measure(1000)
+# p = State > State, project by state
+p = v0 > h0
+# p = State > MeasureOp, project by measure operator
+p = h0 > M0
 ```
 
 ⚪ API stubs
@@ -44,11 +49,10 @@ class State:
   .plot_prob()                  # plot probabilty distribution
   .density -> np.ndarray        # density matrix
   .plot_density()               # plot density matrix
-  .trace -> np.complex          # trace of density matrix
+  .trace -> float               # trace of density matrix
   .__eq__() -> bool             # state equality (ignoring global phase)
   .__matmul__() -> State        # v0 @ v1, state expansion
-  .__gt__() -> str              # v0 > Measure, single measurement
-  .measure() -> Dict[str, int]  # batch measurement
+  .__gt__() -> str              # v0 > Measure|Measure()|State|MeasureOp, various measurements
   .info()                       # quick show info
 
 class Gate:

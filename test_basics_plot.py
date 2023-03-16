@@ -4,19 +4,15 @@
 
 from tiny_q import *
 
-
 ops = RY(np.pi/3) * Z * H
 q = ops | v0
 q.info('RY(pi/3)ZH|0>')
-q.plot_prob('RY(pi/3) * Z * H | v0')
-q.plot_density('RY(pi/3) * Z * H | v0')
-
+q.plots('RY(pi/3) * Z * H | v0')
 
 ops = RY(-np.pi/3) * S
 q = ops | v1
 q.info('RY(-pi/3)S|1>')
-q.plot_prob('RY(-pi/3) * S | v1')
-q.plot_density('RY(-pi/3) * S | v1')
+q.plots('RY(-pi/3) * S | v1')
 
 
 # more complex circuit
@@ -33,5 +29,4 @@ state.info()
 
 q = cirq | state
 q.info()
-q.plot_prob()
-q.plot_density()
+q.plots()

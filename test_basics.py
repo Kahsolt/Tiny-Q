@@ -71,10 +71,23 @@ q: State = ops | v1
 q.info('RY(-pi/3)S|1>')
 
 
-## use > for single measurement
-r = q > Measure
-print('measure:', r)
+## use > Measure for single measurement
+print('Measure:', q > Measure)
+print('Measure:', q > Measure)
+print('Measure:', q > Measure)
+print('Measure:', q > Measure)
+print('Measure:', q > Measure)
+print('Measure:', q > Measure)
+print('Measure:', q > Measure)
 
-## call .measure() for batch measurement
-res = q.measure(n=1000)
-print(res)
+## use > Measure() for batch measurement
+print('Measure(1000):', q > Measure(1000))
+# note that '> Measure' behaves different from '> Measure(1)'
+print('Measure(1):', q > Measure(1))
+
+## use > State to project by state
+print('q > h1:', q > h1)
+
+## use > MeasureOp to project by measure operator
+print('q > M0:', q > M0)
+print('q > M1:', q > M1)

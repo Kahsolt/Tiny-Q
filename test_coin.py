@@ -14,5 +14,5 @@ print('amp:', q.amp)
 print('prob:', q.prob)
 print('density:', q.density)
 
-r = q.measure()
+r = q > Measure()
 print(r)
