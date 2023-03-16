@@ -7,82 +7,74 @@ from tiny_q import *
 ## use matmul operator '@' for system expansion (tensor product)
 
 v0 = State.zero()
-print('|0>')
-print('  state:', v0)
-print('  amp:', v0.amp)
-print('  prob:', v0.prob)
-print('  density:', v0.density)
+v0.info('|0>')
 v1 = State.one()
-print('|1>')
-print('  state:', v1)
-print('  amp:', v1.amp)
-print('  prob:', v1.prob)
-print('  density:', v1.density)
+v1.info('|1>')
 
 v00 = v0 @ v0 ; print(v00)
 v01 = v0 @ v1 ; print(v01)
 v10 = v1 @ v0 ; print(v10)
 v11 = v1 @ v1 ; print(v11)
+print()
 
-v0011 = v00 @ v11 ; print(v0011)
-v011  = v01 @ v1  ; print(v011)
-
-v000 = State.zero(3)
-v11  = State.one(2)
+v000   = State.zero(3)
+v11    = State.one(2)
+v0011  = v00  @ v11
+v011   = v01  @ v1
 v00011 = v000 @ v11
 v0110  = v01  @ v10
 assert v00011 == v000 @ v11 == v00 @ v011 == v0 @ v0011
 assert v0011 @ v0 == v0 @ v0110
 
 u = X @ Y
-print(u)
+u.info('X @ Y')
 u = X @ CNOT
-print(u)
-u = H * H
-print(u)
+u.info('X @ CNOT')
+u = H * Z * H
+u.info('HZH')
 
 
 ## use pipe operator '|' for gate application
-q = H | v0
-print('|+>')
-print('  state:', q)
-print('  amp:', q.amp)
-print('  prob:', q.prob)
-print('  density:', q.density)
-q = H | v1
-print('|->')
-print('  state:', q)
-print('  amp:', q.amp)
-print('  prob:', q.prob)
-print('  density:', q.density)
+h0 = H | v0
+h0.info('|+>')
+h1 = H | v1
+h1.info('|->')
 
-q = X @ Y | v1 @ v0
-print(q)
+q = X @ Y | h0 @ h1
+q.info('XY|+->')
 
-# gate auto broadcast
-q = H | State.one(3)
-print(q)
+# single-qubit gate auto broadcast
+q = H | State.one(2)
+q.info('H|00>')
+
+# local phase cannot be ignored
+assert H | v0 != H | v1
+assert h0 != S | h0
+# but global phase it omittable
+h0_gp = State(np.exp(np.pi/3*1j) * h0.v)
+h0_gp.info('e^φi|+> (global phase)')
+assert h0 == h0_gp
 
 
 ## use mul operator '*' for gate composition
 u = X * X
-assert u == I
+assert u == I   # special case: I can be auto broadcast
+u = X * Y
+assert u != Z
 
 ops: Gate = RY(np.pi/3) * Z * H
 q: State = ops | v0
-print(q)
-q.plot_density('RY(np.pi/3) * Z * H | v0')
+q.info('RY(pi/3)ZH|0>')
 
 ops: Gate = RY(-np.pi/3) * S
 q: State = ops | v1
-print(q)
-q.plot_density('RY(-np.pi/3) * S | v1')
+q.info('RY(-pi/3)S|1>')
 
 
 ## use > for single measurement
 r = q > Measure
-print(r)
+print('measure:', r)
 
 ## call .measure() for batch measurement
-res = q.measure(n=100)
+res = q.measure(n=1000)
 print(res)

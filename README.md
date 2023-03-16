@@ -19,7 +19,7 @@ u = X * H
 # q = Gate | State
 q = X | v0
 
-# use matmul @ for system expansion (gate/state tensor dot)
+# use matmul @ for system expansion (gate/state tensor product)
 #u = Gate @ Gate
 u = H @ I
 #q = State @ State
@@ -37,23 +37,30 @@ r = CNOT * (H @ I) | State.zero(2) > Measure
 class State:
   .n_qubits -> int
   .is_pure -> bool
+  .zero()                       # alloc |0>s
+  .one()                        # alloc |1>s
   .amp -> np.ndarray            # amplitude
-  .prob -> np.ndarray           # probobilty distribution
+  .prob -> np.ndarray           # probabilty distribution
+  .plot_prob()                  # plot probabilty distribution
   .density -> np.ndarray        # density matrix
-  .plot_density()
-  .measure() -> Dict[str, int]  # batch measurement
+  .plot_density()               # plot density matrix
+  .trace -> np.complex          # trace of density matrix
   .__eq__() -> bool             # state equality (ignoring global phase)
   .__matmul__() -> State        # v0 @ v1, state expansion
   .__gt__() -> str              # v0 > Measure, single measurement
+  .measure() -> Dict[str, int]  # batch measurement
+  .info()                       # quick show info
 
 class Gate:
   .n_qubits -> int
   .is_unitary -> bool           # unitary (should always be True)
   .is_hermitian -> bool         # hermitian (True for most gates)
+  .__eq__() -> bool             # gate equality
   .__pow__() -> Gate            # H**alpha, gate self-power
   .__mul__() -> Gate            # X * H: gate composition
   .__matmul__() -> Gate         # X @ H: gate expansion
   .__or__() -> State            # X | v0: gate application
+  .info()                       # quick show info
 ```
 
 ----

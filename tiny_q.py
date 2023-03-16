@@ -6,6 +6,7 @@ from typing import Dict
 
 import numpy as np
 np.set_printoptions(precision=4, suppress=True)
+np.seterr(divide='ignore', invalid='ignore')
 
 EPS = 1e-6
 
@@ -33,8 +34,8 @@ class State:
 
   @property
   def is_pure(self) -> bool:
-    ''' pure state: trace of density matrix equals to 1.0 '''
-    return self.trace >= 1.0 - EPS
+    ''' pure state: trace of density matrix equals to 1.0, or rho == rho**2 '''
+    return np.abs(self.trace) >= 1.0 - EPS
 
   def __str__(self):
     return str(self.v)
@@ -59,21 +60,27 @@ class State:
   def __eq__(self, other):
     ''' v0 == v1: state equality ignores the global phase '''
     assert isinstance(other, State), f'other should be a State, but got {type(other)}'
-    return np.abs(np.abs(self.v) - np.abs(other.v)).max() < EPS
+    c = self.v / other.v            # assume c * |v> = |w>, where 'c' is a complex number
+    vals = c[~np.isnan(c)]          # if vals is consistent to only one value, then 'c' is a valid global phase
+    n_vals = len(vals)
+    for i in range(0, n_vals-1):    # pairwise modulo diff should < EPS, if values are consistent
+      for j in range(i+1, n_vals):
+        if np.abs(vals[i] - vals[j]) > EPS:
+          return False
+    return True
 
   def __matmul__(self, other):
-    ''' v0 @ v1 = |0>|1>: tensor dot of two quantum systems '''
+    ''' v0 @ v1 = |0>|1> = |01>: tensor product of two quantum systems '''
     assert isinstance(other, State), f'other should be a State, but got {type(other)}'
     return State(np.kron(self.v, other.v))
 
   def __gt__(self, other) -> str:
     ''' v0 > Measure: measure prob '''
     assert other is Measure, f'other must be Measure, but get {type(other)}({other})'
-    cstates = [bin(x)[2:] for x in range(2**self.n_qubits)]
-    return np.random.choice(a=cstates, replace=True, p=self.prob)
+    return np.random.choice(a=self._cstates, replace=True, p=self.prob)
 
   def measure(self, n=1000) -> Dict[str, int]:
-    results = {bin(x)[2:]: 0 for x in range(2**self.n_qubits)}
+    results = {stat: 0 for stat in self._cstates}
     for _ in range(n):
       results[self > Measure] += 1
     return results
@@ -88,18 +95,48 @@ class State:
 
   @property
   def density(self):
+    ''' density matrix: rho := |v><v|
+          - diag(rho) indicates probability of each classic state it'll collapses into after measurement
+          - non-diag(rho) indicates **superpositioness** of the state, a pure mixed state is a simple diagonal matrix, 
+            non-diagonal cells are all zeros showing that no any superpositioness
+          - whether rho can be decomposed into tensor product of several smaller matrices indicates **entanglementness** of a multi-body system
+    '''
     return np.outer(self.v, self.v)
 
   @property
   def trace(self):
-    return np.abs(np.trace(self.density)).sum()
+    ''' trace of density matrix '''
+    return np.trace(self.density)
+  
+  @property
+  def _cstates(self):
+    return [bin(x)[2:].rjust(self.n_qubits, '0') for x in range(2**self.n_qubits)]
 
-  def plot_density(self, title=None):
+  def info(self, title='|phi>'):
+    print(title)
+    print('  state:', self)
+    print('  amp:', self.amp)
+    print('  prob:', self.prob)
+    print('  density:', self.density)
+    print('  trace:', self.trace)
+    print()
+
+  def plot_prob(self, title='prob dist'):
+    import matplotlib.pyplot as plt
+
+    plt.clf()
+    plt.bar(self._cstates, self.prob, color='royalblue', alpha=0.9)
+    plt.ylim((0.0, 1.0))
+    if title: plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+
+  def plot_density(self, title='density'):
     import matplotlib.pyplot as plt
     import seaborn as sns
 
     plt.clf()
-    sns.heatmap(np.abs(self.density), annot=True, vmin=0, vmax=1, cbar=True, cmap='Blues')
+    sns.heatmap(np.abs(self.density), annot=True, vmin=0, vmax=1, cbar=True, cmap='Blues', alpha=0.9)
     if title: plt.suptitle(title)
     plt.tight_layout()
     plt.show()
@@ -177,7 +214,7 @@ class Gate:
     return Gate(self.v @ other.v)
 
   def __matmul__(self, other):
-    ''' H @ X: tensor dot of two quantum gate '''
+    ''' H @ X: tensor product of two quantum gate '''
     assert isinstance(other, Gate), 'other should be a Gate'
     return Gate(np.kron(self.v, other.v))
 
@@ -185,7 +222,7 @@ class Gate:
     ''' H | v0 = H|0>: apply this unitary transform on a state '''
     assert isinstance(other, State), f'other must be a State, but got {type(other)}'
 
-    if self.n_qubits == 1 and other.n_qubits > 1:   # auto broadcast
+    if self.n_qubits == 1 and other.n_qubits > 1:   # single-qubit gate auto broadcast
       gate = self
       for _ in range(1, other.n_qubits):
         gate = gate @ self
@@ -194,6 +231,11 @@ class Gate:
       gate = self
 
     return State(gate.v @ other.v)
+
+  def info(self, title='|U|'):
+    print(title)
+    print(self)
+    print()
 
 
 # https://en.wikipedia.org/wiki/List_of_quantum_logic_gates
