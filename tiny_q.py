@@ -11,18 +11,32 @@ from scipy.linalg import fractional_matrix_power
 import numpy as np
 np.set_printoptions(precision=4, suppress=True)
 np.seterr(divide='ignore', invalid='ignore')
-np.bitwise_xor = np.power
-from numpy import e, pi, sin, cos, exp
 
-EPS = 1e-6
-i = np.complex64(0 + 1j)    # imaginary unit
+
+if 'syntax hijack':
+  from numpy import pi, sin, cos
+
+  class HijackXor(float):
+    def __xor__(self, other):
+      return other.__rpow__(self)
+
+  class HijackDagger(np.ndarray):
+    @property
+    def dagger(self):
+      return self.conj().T
+
+  e = HijackXor(np.e)
+  i = np.complex64(0 + 1j)    # imaginary unit
+
+  EPS = 1e-6
 
 
 class Meta:
 
   def __init__(self, v):
-    self.v = np.asarray(v, dtype=np.complex64)
-  
+    x = np.asarray(v, dtype=np.complex64)
+    self.v = HijackDagger(x.shape, buffer=x, dtype=x.dtype)
+
   def __str__(self) -> str:
     return str(self.v)
 
@@ -37,6 +51,14 @@ class Meta:
   def n_qubits(self) -> int:
     return int(np.log2(self.v.shape[0]))
 
+  @staticmethod
+  def system_expansion(x:Union[State, Gate], n:int=1) -> Union[State, Gate]:
+    ''' s1 @ s2: tensor dot of sub-systems '''
+    r = x
+    for _ in range(1, n):
+      r = r @ x
+    return r
+
 
 class State(Meta):
 
@@ -48,11 +70,6 @@ class State(Meta):
     assert isinstance(self.v, np.ndarray), 'state vector should be np.ndarray type'
     assert len(self.shape) == 1, 'state vector should be 1-dim array'
     assert np.log2(self.shape[0]) % 1 == 0.0, 'state vector length should be power of 2'
-
-  @property
-  def is_pure(self) -> bool:
-    ''' pure state: trace of density matrix equals to 1.0, or rho == rho^2 '''
-    return self.trace >= 1.0 - EPS
 
   @classmethod
   def zero(cls, n:int=1) -> State:
@@ -109,9 +126,21 @@ class State(Meta):
       return np.abs(np.inner(self.v, other.v)) ** 2
     elif isinstance(other, MeasureOp):
       ''' p(i) = <phi| Mi.dagger * Mi |phi> '''
-      return np.abs(self.v.T @ other.v.conj().T @ other.v @ self.v)
+      return np.abs(self.v.dagger @ other.v.dagger @ other.v @ self.v)
     else:
       raise TypeError(f'other should be a MeasureOp or a State, or the Measure object, but got {type(other)}({other})')
+
+  @property
+  def is_pure(self) -> bool:
+    '''
+      rho properties for pure state: 
+        - idempotent: rho^2 == rho
+        - tr(rho) = Σi <i|rho|i> = 1
+        - tr(rho^2) == 1
+        - hermitian: rho.dagger = rho
+        - positive semi-definite: <phi|rho|phi> >= 0
+    '''
+    return np.trace(np.linalg.matrix_power(self.density, 2)) >= 1.0 - EPS
 
   @property
   def amp(self) -> np.ndarray:
@@ -126,18 +155,19 @@ class State(Meta):
   @property
   def density(self) -> np.ndarray:
     '''
-      rho := |phi><phi| (pure state) or Σαi|i><i| (mixed state), density matrix
+      rho := |phi><phi| (pure state) or Σi αi|phi_i><phi_i| (mixed state), density matrix
         - diag(rho) indicates probability of each classic state it'll collapses into after measurement
         - non-diag(rho) indicates **superpositioness** of the state, a pure mixed state is a simple diagonal matrix, 
           non-diagonal cells are all zeros showing that no any superpositioness
         - whether rho can be decomposed into tensor product of several smaller matrices indicates **entanglementness** of a multi-body system
+      NOTE: one density matrix corresponds to many quantum states respect to a global phase
     '''
     return np.outer(self.v, self.v)
 
   @property
   def trace(self) -> float:
-    ''' tr(rho) = Σ|diag(rho)|: trace of density matrix '''
-    return np.abs(np.diag(self.density)).sum()
+    ''' tr(rho) = Σ diag(rho): trace of density matrix '''
+    return np.trace(self.density)
 
   @property
   def _cstates(self) -> List[str]:
@@ -160,7 +190,7 @@ class State(Meta):
     plt.tight_layout()
     plt.show()
 
-  def plot_density(self, title='density'):
+  def plot_density(self, title='rho'):
     plt.clf()
     sns.heatmap(np.abs(self.density), annot=True, vmin=0, vmax=1, cbar=True, cmap='Blues', alpha=0.9)
     if title: plt.suptitle(title)
@@ -194,15 +224,15 @@ class MeasureOp(Meta):
     assert np.log2(self.shape[0]) % 1 == 0.0, 'measure operator size should be power of 2'
 
   @staticmethod
-  def check_completeness(ops: list) -> bool:
-    ''' Σ(Mi.dagger * Mi) = I: completeness equation for a measure operator set '''
+  def check_completeness(ops: List[MeasureOp]) -> bool:
+    ''' Σi (Mi.dagger * Mi) = I: completeness equation for a measure operator set '''
 
     if not ops: return False
     for op in ops: assert isinstance(op, MeasureOp), f'elem of ops should be a MeasureOp, but got {type(op)}'
 
     s = np.zeros_like(ops[0].v)
     for Mi in ops:
-      s += Mi.v.conj().T @ Mi.v
+      s += Mi.v.dagger @ Mi.v
     s -= np.eye(2**ops[0].n_qubits)
     return np.abs(s).max() < EPS
 
@@ -220,32 +250,19 @@ class Gate(Meta):
     assert np.log2(self.shape[0]) % 1 == 0.0, 'gate matrix size should be power of 2'
     assert self.is_unitary, f'gate matrix should be unitary: {self.v}'
 
-  @property
-  def is_unitary(self) -> bool:
-    ''' unitary: dot(A, A.dagger) == dot(A.dagger, A) = I '''
-    return np.abs(np.matmul(self.v, self.v.conj().T) - np.eye(2**self.n_qubits)).max() < EPS
-
-  @property
-  def is_hermitian(self) -> bool:
-    ''' hermitian: A.dagger == A '''
-    return np.abs(self.v.conj().T - self.v).max() < EPS
-
   def __neg__(self) -> Gate:
     ''' Ph(-pi)*U == -U '''
-    return Ph(-pi) | self
+    return Ph(-pi) * self
 
   def __eq__(self, other: Any) -> bool:
     if not isinstance(other, Gate): raise NotImplemented
 
     if self.n_qubits > 1 and other is I:   # auto broadcast
-      gate = other
-      for _ in range(1, self.n_qubits):
-        gate = gate @ other
+      other = Meta.system_expansion(other, self.n_qubits)
     else:
       assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
-      gate = other
 
-    return np.abs(self.v - gate.v).max() < EPS
+    return np.abs(self.v - other.v).max() < EPS
 
   def __pow__(self, pow: float):
     ''' H**pow: gate self-power '''
@@ -275,14 +292,21 @@ class Gate(Meta):
     assert isinstance(other, State), f'other should be a State, but got {type(other)}'
 
     if self.n_qubits == 1 and other.n_qubits > 1:   # single-qubit gate auto broadcast
-      gate = self
-      for _ in range(1, other.n_qubits):
-        gate = gate @ self
+      self = Meta.system_expansion(self, other.n_qubits)
     else:
       assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
-      gate = self
 
-    return State(gate.v @ other.v)
+    return State(self.v @ other.v)
+
+  @property
+  def is_unitary(self) -> bool:
+    ''' unitary: dot(A, A.dagger) == dot(A.dagger, A) = I '''
+    return np.abs(np.matmul(self.v, self.v.dagger) - np.eye(2**self.n_qubits)).max() < EPS
+
+  @property
+  def is_hermitian(self) -> bool:
+    ''' hermitian: A.dagger == A '''
+    return np.abs(self.v.dagger - self.v).max() < EPS
 
   def info(self, title='|U|'):
     print(title)
@@ -304,9 +328,9 @@ I = Gate([                    # indentity
   [1, 0],
   [0, 1],
 ])
-Ph = lambda theta: Gate([     # alter global phase, exp(-i*theta*I)
-  [exp(i*theta), 0],
-  [0, exp(i*theta)],
+Ph = lambda theta: Gate([     # alter global phase, e^(-i*theta*I)
+  [e^(-i*theta), 0],
+  [0, e^(-i*theta)],
 ])
 X = NOT = Gate([              # flip amplitude
   [0, 1],
@@ -330,35 +354,35 @@ SX = V = Gate(np.asarray([    # sqrt(X)
 ]) / 2)
 P = lambda phi: Gate([        # alter phase
   [1, 0],
-  [0, exp(i*phi)],
+  [0, e^(i*phi)],
 ])
 S = Gate([                    # alter phase, S = Z^(1/2) = P(pi/2)
   [1, 0],
-  [0, exp(i*pi/2)],           # e^(i*pi/2) == i
+  [0, e^(i*pi/2)],           # e^(i*pi/2) == i
 ])
 T = Gate([                    # alter phase, T = S^(1/2) = Z^(1/4) = P(pi/4)
   [1, 0],
-  [0, exp(i*pi/4)],           # e^(i*pi/4) == (1+i)/sqrt(2)
+  [0, e^(i*pi/4)],            # e^(i*pi/4) == (1+i)/sqrt(2)
 ])
-RX = lambda theta: Gate([     # alter amplitude, exp(-i*X*theta/2)
+RX = lambda theta: Gate([     # alter amplitude, e^(-i*X*theta/2)
   [cos(theta/2), -i*sin(theta/2)],
   [-i*sin(theta/2), cos(theta/2)],
 ])
-RY = lambda theta: Gate([     # alter amplitude, exp(-i*Y*theta/2)
+RY = lambda theta: Gate([     # alter amplitude, e^(-i*Y*theta/2)
   [cos(theta/2), -sin(theta/2)],
   [sin(theta/2),  cos(theta/2)],
 ])
-RZ = lambda theta: Gate([     # alter phase, exp(-i*Z*theta/2)
-  [exp(-i*theta/2), 0],
-  [0, exp(i*theta/2)],
+RZ = lambda theta: Gate([     # alter phase, e^(-i*Z*theta/2)
+  [e^(-i*theta/2), 0],
+  [0, e^(i*theta/2)],
 ])
-RZ1 = lambda theta: Gate([    # another form of RZ except a g_phase of exp(i*theta/2)
+RZ1 = lambda theta: Gate([    # another form of RZ except a g_phase of e^(i*theta/2)
   [1, 0],
-  [0, exp(i*theta)],
+  [0, e^(i*theta)],
 ])
 U = lambda theta, phi, lmbd: Gate([
-  [cos(theta/2), -exp(-i*lmbd)*sin(theta/2)],
-  [exp(-i*phi)*sin(theta/2), exp(i*(lmbd+phi))*cos(theta/2)],
+  [cos(theta/2), -e^(-i*lmbd)*sin(theta/2)],
+  [e^(-i*phi)*sin(theta/2), e^(i*(lmbd+phi))*cos(theta/2)],
 ])
 U1 = lambda alpha, beta, gamma, delta: Ph(alpha) * RZ(beta) * RY(gamma) * RZ(delta)     # universal Z-Y decomposition
 SWAP = Gate([
@@ -454,3 +478,6 @@ if __name__ == '__main__':
 
   # => measure operator set
   assert MeasureOp.check_completeness([M0, M1])
+
+  from code import interact
+  interact(local=globals())

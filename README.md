@@ -7,8 +7,14 @@
 ![demo](img/demo.png)
 
 
-The main difference from existing framesworks is that, 
-we distinguish operations by different python operator to make formula syntax more clear :)
+=> Start interactive python shell with Tiny-Q environment: `python tiny_q.py`
+
+```python
+
+```
+
+
+The main difference from existing framesworks is that, we distinguish types of operations -- `gate composition (*)`, `gate application (|)`, `system expansion (@)`, `quantum measure (>)` -- by different python operators to make formula syntax more clear :)
 
 ```python
 # use mul * for gate composition
