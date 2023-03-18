@@ -35,6 +35,18 @@ array([[1.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
 
 >>> q > Measure()
 {'00': 489, '01': 0, '10': 0, '11': 511}
+>>> q < Measure
+>>> q.info()
+|phi>
+  state: [1.+0.j 0.+0.j 0.+0.j 0.+0.j]
+  amp: [1. 0. 0. 0.]
+  prob: [1. 0. 0. 0.]
+  density: [[1.+0.j 0.+0.j 0.+0.j 0.+0.j]
+ [0.+0.j 0.+0.j 0.+0.j 0.+0.j]
+ [0.+0.j 0.+0.j 0.+0.j 0.+0.j]
+ [0.+0.j 0.+0.j 0.+0.j 0.+0.j]]
+  trace: (1+0j)
+
 >>>
 now exiting InteractiveConsole...
 ```
@@ -57,7 +69,7 @@ u = H @ I
 #q = State @ State
 q = v0 @ v1
 
-# use > for measurements
+# use > for virtual measurements
 # r = State > Measure, single measure
 r = H | v0 > Measure
 # r = State > Measure(count), bunch measure
@@ -66,6 +78,11 @@ r = CNOT * (H @ I) | State.zero(2) > Measure(1000)
 p = v0 > h0
 # p = State > MeasureOp, project by measure operator
 p = h0 > M0
+
+# use > for real measure with state collapse
+# State < Measure
+q = CNOT * (H @ I) | v('00')
+q < Measure
 ```
 
 ⚪ API stubs
@@ -80,7 +97,8 @@ class State(Meta):
   .one() -> State               # alloc a |1> string
   .__eq__() -> bool             # state equality (ignoring global phase)
   .__matmul__() -> State        # v0 @ v1, state expansion
-  .__gt__() -> Union            # v0 > Measure|Measure()|State|MeasureOp, various measurements
+  .__lt__() -> Union            # v0 < Measure, real measure with state collapse
+  .__gt__() -> Union            # v0 > Measure|Measure()|State|MeasureOp, virtual measurements
   .is_pure -> bool              # purity
   .amp -> np.ndarray            # amplitude
   .prob -> np.ndarray           # probabilty distribution

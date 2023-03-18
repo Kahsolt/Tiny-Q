@@ -107,7 +107,16 @@ class State(Meta):
     assert isinstance(other, State), f'other should be a State, but got {type(other)}'
     return State(np.kron(self.v, other.v))
 
-  def __gt__(self, other: State) -> Union[str, Dict[str, int], float]:
+  def __lt__(self, other: Measure):
+    '''
+      v0 < Measure: project measure by computational basis, then make quantum state collapse **inplace**
+        - the state shows probability of p(i) = <phi|Mi|phi> to collapse on \frac{Mi|phi>}{sqrt(p(i))}
+        - for projection measure on computational basis, you just got the i-th cstate |i>
+    '''
+    assert other is Measure, f'other must be Measure, but got {other}'
+    self.v = v(self > Measure).v
+
+  def __gt__(self, other: Union[Measure, State, MeasureOp]) -> Union[str, Dict[str, int], float]:
     '''
       v0 > Measure: project measure by computational basis, return result as binary string
       v0 > Measure(n): project measure by computational basis, return results as a Dict[str, int]
@@ -148,12 +157,12 @@ class State(Meta):
 
   @property
   def amp(self) -> np.ndarray:
-    ''' |phi> = Σαi|i>, amplitude of i-th basis amp(|i>) = abs(αi) '''
+    ''' |phi> = Σi αi|i>, amplitude of i-th basis amp(|i>) = abs(αi) '''
     return np.abs(self.v)
 
   @property
   def prob(self) -> np.ndarray:
-    ''' |phi> = Σαi|i>, probability of i-th basis prob(|i>) = |αi|^2 '''
+    ''' |phi> = Σi αi|i>, probability of i-th basis prob(|i>) = |αi|^2 '''
     return self.amp ** 2
 
   @property

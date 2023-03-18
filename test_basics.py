@@ -101,3 +101,10 @@ print('q > h1:', q > h1)
 ## use > MeasureOp to project by measure operator
 print('q > M0:', q > M0)
 print('q > M1:', q > M1)
+
+## use < Measure to do real measure & state collapse
+print('before q < Measure:', q)
+q < Measure
+print('after q < Measure:', q)
+q < Measure
+print('repeat q < Measure:', q)
