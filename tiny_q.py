@@ -16,16 +16,16 @@ np.seterr(divide='ignore', invalid='ignore')
 if 'syntax hijack':
   from numpy import pi, sin, cos
 
-  class HijackXor(float):
+  class float(float):
     def __xor__(self, other):
       return other.__rpow__(self)
 
-  class HijackDagger(np.ndarray):
+  class array(np.ndarray):
     @property
     def dagger(self):
       return self.conj().T
 
-  e = HijackXor(np.e)
+  e = float(np.e)
   i = np.complex64(0 + 1j)    # imaginary unit
 
   EPS = 1e-6
@@ -33,9 +33,9 @@ if 'syntax hijack':
 
 class Meta:
 
-  def __init__(self, v):
+  def __init__(self, v:Union[np.ndarray, list]):
     x = np.asarray(v, dtype=np.complex64)
-    self.v = HijackDagger(x.shape, buffer=x, dtype=x.dtype)
+    self.v = array(x.shape, buffer=x, dtype=x.dtype)
 
   def __str__(self) -> str:
     return str(self.v)
@@ -50,6 +50,10 @@ class Meta:
   @property
   def n_qubits(self) -> int:
     return int(np.log2(self.v.shape[0]))
+
+  @property
+  def dagger(self) -> Meta:
+    return self.__class__(self.v.dagger)
 
   @staticmethod
   def system_expansion(x:Union[State, Gate], n:int=1) -> Union[State, Gate]:
@@ -126,7 +130,7 @@ class State(Meta):
       return np.abs(np.inner(self.v, other.v)) ** 2
     elif isinstance(other, MeasureOp):
       ''' p(i) = <phi| Mi.dagger * Mi |phi> '''
-      return np.abs(self.v.dagger @ other.v.dagger @ other.v @ self.v)
+      return np.abs(self.dagger.v @ other.dagger.v @ other.v @ self.v)
     else:
       raise TypeError(f'other should be a MeasureOp or a State, or the Measure object, but got {type(other)}({other})')
 
@@ -211,32 +215,6 @@ class State(Meta):
     plt.show()
 
 
-class MeasureOp(Meta):
-
-  ''' represents a partial measurement operator from some set '''
-
-  def __init__(self, v):
-    super().__init__(v)
-
-    assert isinstance(self.v, np.ndarray), 'measure operator should be np.ndarray type'
-    assert len(self.shape) == 2, 'measure operator should be 2-dim array'
-    assert self.shape[0] == self.shape[1], 'measure operator should be square'
-    assert np.log2(self.shape[0]) % 1 == 0.0, 'measure operator size should be power of 2'
-
-  @staticmethod
-  def check_completeness(ops: List[MeasureOp]) -> bool:
-    ''' Σi (Mi.dagger * Mi) = I: completeness equation for a measure operator set '''
-
-    if not ops: return False
-    for op in ops: assert isinstance(op, MeasureOp), f'elem of ops should be a MeasureOp, but got {type(op)}'
-
-    s = np.zeros_like(ops[0].v)
-    for Mi in ops:
-      s += Mi.v.dagger @ Mi.v
-    s -= np.eye(2**ops[0].n_qubits)
-    return np.abs(s).max() < EPS
-
-
 class Gate(Meta):
 
   ''' represents a unitary transform, aka, a quantum gate matrix '''
@@ -250,10 +228,6 @@ class Gate(Meta):
     assert np.log2(self.shape[0]) % 1 == 0.0, 'gate matrix size should be power of 2'
     assert self.is_unitary, f'gate matrix should be unitary: {self.v}'
 
-  def __neg__(self) -> Gate:
-    ''' Ph(-pi)*U == -U '''
-    return Ph(-pi) * self
-
   def __eq__(self, other: Any) -> bool:
     if not isinstance(other, Gate): raise NotImplemented
 
@@ -263,6 +237,10 @@ class Gate(Meta):
       assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
 
     return np.abs(self.v - other.v).max() < EPS
+
+  def __neg__(self) -> Gate:
+    ''' Ph(-pi)*U == -U '''
+    return Ph(-pi) * self
 
   def __pow__(self, pow: float):
     ''' H**pow: gate self-power '''
@@ -312,6 +290,32 @@ class Gate(Meta):
     print(title)
     print(self)
     print()
+
+
+class MeasureOp(Meta):
+
+  ''' represents a partial measurement operator from some set '''
+
+  def __init__(self, v):
+    super().__init__(v)
+
+    assert isinstance(self.v, np.ndarray), 'measure operator should be np.ndarray type'
+    assert len(self.shape) == 2, 'measure operator should be 2-dim array'
+    assert self.shape[0] == self.shape[1], 'measure operator should be square'
+    assert np.log2(self.shape[0]) % 1 == 0.0, 'measure operator size should be power of 2'
+
+  @staticmethod
+  def check_completeness(ops: List[MeasureOp]) -> bool:
+    ''' Σi (Mi.dagger * Mi) = I: completeness equation for a measure operator set '''
+
+    if not ops: return False
+    for op in ops: assert isinstance(op, MeasureOp), f'elem of ops should be a MeasureOp, but got {type(op)}'
+
+    s = np.zeros_like(ops[0].v)
+    for Mi in ops:
+      s += Mi.dagger.v @ Mi.v
+    s -= np.eye(2**ops[0].n_qubits)
+    return np.abs(s).max() < EPS
 
 
 def v(string: str) -> State:
@@ -460,8 +464,10 @@ if __name__ == '__main__':
       else:        assert (q1 > q2) - 0.5 < EPS
   assert v('0') == v0 and v('1') == v1
   assert v('10110') == v1 @ v0 @ v1 @ v1 @ v0
+  assert v0.dagger == v0
 
   # => global phase gate
+  assert X.dagger == X
   assert Ph(0) == I
   assert Ph(pi) == Ph(-pi) == Gate(-I.v)
 

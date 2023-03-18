@@ -10,7 +10,33 @@
 => Start interactive python shell with Tiny-Q environment: `python tiny_q.py`
 
 ```python
+(InteractiveConsole)
+>>> v('00')
+array([1.+0.j, 0.+0.j, 0.+0.j, 0.+0.j], dtype=complex64)
+>>> H
+array([[ 0.7071+0.j,  0.7071+0.j],
+       [ 0.7071+0.j, -0.7071+0.j]], dtype=complex64)
+>>> CNOT
+array([[1.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
+       [0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j],
+       [0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j],
+       [0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j]], dtype=complex64)
+>>> q = CNOT * (H @ I) | v('00')
+>>> q.info()
+|phi>
+  state: [0.7071+0.j 0.    +0.j 0.    +0.j 0.7071+0.j]
+  amp: [0.7071 0.     0.     0.7071]
+  prob: [0.5 0.  0.  0.5]
+  density: [[0.5+0.j 0. +0.j 0. +0.j 0.5+0.j]
+ [0. +0.j 0. +0.j 0. +0.j 0. +0.j]
+ [0. +0.j 0. +0.j 0. +0.j 0. +0.j]
+ [0.5+0.j 0. +0.j 0. +0.j 0.5+0.j]]
+  trace: (0.99999994+0j)
 
+>>> q > Measure()
+{'00': 489, '01': 0, '10': 0, '11': 511}
+>>>
+now exiting InteractiveConsole...
 ```
 
 
@@ -47,14 +73,15 @@ p = h0 > M0
 ```python
 class Meta:
   .n_qubits -> int              # qubit count of current system
+  .dagger -> Meta               # dagger of State/Gate/MeasureOp
 
 class State(Meta):
-  .is_pure -> bool
   .zero() -> State              # alloc a |0> string
   .one() -> State               # alloc a |1> string
   .__eq__() -> bool             # state equality (ignoring global phase)
   .__matmul__() -> State        # v0 @ v1, state expansion
   .__gt__() -> Union            # v0 > Measure|Measure()|State|MeasureOp, various measurements
+  .is_pure -> bool              # purity
   .amp -> np.ndarray            # amplitude
   .prob -> np.ndarray           # probabilty distribution
   .density -> np.ndarray        # density matrix
@@ -64,19 +91,19 @@ class State(Meta):
   .plot_density()               # plot density matrix
   .plots()                      # plot all figures
 
-class MeasureOp(Meta):
-  .check_completeness() -> bool
-
 class Gate(Meta):
-  .is_unitary -> bool           # unitary (should always be True)
-  .is_hermitian -> bool         # hermitian (True for most gates)
   .__eq__() -> bool             # gate equality
   .__neg__() -> Gate            # -H, global negative
   .__xor__() -> Gate            # H^alpha, gate self-power
   .__mul__() -> Gate            # X * H: gate composition
   .__matmul__() -> Gate         # X @ H: gate expansion
   .__or__() -> State            # X | v0: gate application
+  .is_unitary -> bool           # unitary (should always be True)
+  .is_hermitian -> bool         # hermitian (True for most gates)
   .info()                       # quick show info
+
+class MeasureOp(Meta):
+  .check_completeness() -> bool
 ```
 
 ----
