@@ -5,63 +5,49 @@
 from tiny_q import *
 
 # quantum fourier transform
+# https://en.wikipedia.org/wiki/Quantum_Fourier_transform
 
-# test sanity of components
-assert (sSWAP(2) | v('10'))  .cbit == '01'
-assert (sSWAP(2) | v('01'))  .cbit == '10'
-assert (sSWAP(3) | v('100')) .cbit == '001'
-assert (sSWAP(3) | v('001')) .cbit == '100'
-assert (sSWAP(4) | v('1000')).cbit == '0001'
-assert (sSWAP(4) | v('1100')).cbit == '0101'
-assert (sSWAP(4) | v('0001')).cbit == '1000'
-assert (sSWAP(4) | v('0011')).cbit == '1010'
+# sanity check
+for n in range(2, 10+1):
+  sswap = sSWAP(n)
+  for val in range(n):
+    sbit = bin(val)[2:].rjust(n, '0')
+    rbit = sbit[-1] + sbit[1:-1] + sbit[0]
+    assert (sswap | v(sbit)).cbit == rbit
 
-for k in range(2, 5+1):
-  print(f'R{k}:')
-  print(P(2*pi/2**k))
-
-
-# test sanity
-for n in range(1, 5+1):
+for n in range(1, 7+1):
   qft_t = QFT(n, run_circuit=False)
   qft_c = QFT(n, run_circuit=True)
-  try: assert qft_t == qft_c
-  except: print(f'mismatch when n = {n}')
+  assert qft_t == qft_c
 
 
-# what happens on bell_state?
+# what happens on bell_state & ghz_state?
 q = bell_state
-q.info('bell_state')
+q.info ('bell_state')
 q.plots('bell_state')
-q_qft = QFT(q.n_qubits) | q
-q_qft.info('bell_state QFT')
-q_qft.plots('bell_state QFT')
+
+qft = QFT(q.n_qubits)
+q_qft = q
+for n in range(1, 10+1):
+  q_qft = qft | q_qft
+  q_qft.info (f'QFT @ {n} | bell_state')
+  q_qft.plots(f'QFT @ {n} | bell_state')
 
 q = ghz_state
-q.info('ghz_state')
+q.info ('ghz_state')
 q.plots('ghz_state')
-q_qft = QFT(q.n_qubits) | q
-q_qft.info('ghz_state QFT')
-q_qft.plots('ghz_state QFT')
+
+qft = QFT(q.n_qubits)
+q_qft = q
+for n in range(1, 10+1):
+  q_qft = qft | q_qft
+  q_qft.info (f'QFT @ {n} | ghz_state')
+  q_qft.plots(f'QFT @ {n} | ghz_state')
 
 
-# show what it does
+# show what QFT it actually does...
 # => just basis transform from |01> to |+-> ??
-for n in range(1, 3+1):
-  qft = QFT(n)
-
-  # |00..0>
-  q = v('0' * n)
-  q.info('q')
-  q.plots('q')
-  q_qft = qft | q
-  q_qft.info('q QFT')
-  q_qft.plots('q QFT')
-
-  # |++..+> = H|00..0>
-  p = H | q
-  p.info('p')
-  p.plots('p')
-  p_qft = qft | p
-  p_qft.info('p QFT')
-  p_qft.plots('p QFT')
+for sbit in ['0', '10', '11', '101']:
+  q = QFT(len(sbit)) | v(sbit)
+  q.info (f'QFT | {sbit}>')
+  q.plots(f'QFT | {sbit}>')

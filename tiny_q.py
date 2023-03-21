@@ -502,26 +502,26 @@ def get_I(n:int) -> Gate:
   if n not in Is: Is[n] = I @ n
   return Is[n]
 
-def Control(u: Gate, n_ctrl=1) -> Gate:
+def Control(u: Gate) -> Gate:
   '''
-    one-qubit control gate:
+    Two-qubits CU (controlled unitary) gate, the control qubit is the higher one:
       [ I O
         O U ]
-    where I is k-qubit identity, U is 1-qubits unitary, Os are zeros
+    where I is 1-qubit identity, U is 1-qubits unitary, Os are zeros
   '''
   assert u.n_qubits == 1, 'the controllee should be single-qubit gate'
-  n_qubits = n_ctrl + 1
+  n_qubits = 2
   v = np.eye(2**n_qubits, dtype=u.v.dtype)
   v[-2:, -2:] = u.v
   return Gate(v)
 
 def sSWAP(n_qubits=3) -> Gate:
   '''
-    sSWAP: a k-qubit SWAP only swapping the first qubit with the last
-      ----x----  ----x----
-      ----|----  ----|----
-      ----x----  ----|----
-                 ----x----
+    sSWAP: n-qubits skipping SWAP, which only swap the first qubit with the last
+      ---x---  ---x---
+      ---|---  ---|---
+      ---x---  ---|---
+               ---x---
     shows sSWAP(3) swapping |ijk> -> |kji> and sSWAP(4) swapping |abcd> -> |dbca>
   '''
   assert isinstance(n_qubits, int) and n_qubits >= 2, f'n_qubits should be an integer >=2 but got {n_qubits}'
@@ -541,10 +541,19 @@ def sSWAP(n_qubits=3) -> Gate:
 
   # core swap
   if is_odd:
+    '''
+      ---x-----x---   i -> j -> j -> k
+      ---x--x--x---   j -> i -> k -> j 
+      ------x------   k -> k -> i -> i
+    '''
     mid_swap1 = get_I(n_bubble) @ SWAP @ get_I(n_bubble + 1)
     mid_swap2 = get_I(n_bubble + 1) @ SWAP @ get_I(n_bubble)
     u = (mid_swap1 * mid_swap2 * mid_swap1) * u
   else:
+    '''
+      ---x---   i -> j
+      ---x---   j -> i
+    '''
     mid_swap = get_I(n_bubble) @ SWAP @ get_I(n_bubble)
     u = mid_swap * u
 
@@ -552,7 +561,7 @@ def sSWAP(n_qubits=3) -> Gate:
   for swap in reversed(swaps): u = swap * u
   return u
 
-def QFT(n_qubits=2, run_circuit=False) -> Gate:
+def QFT(n_qubits=2, run_circuit=True) -> Gate:
   '''
     Linear basis transform alike DFT: 
       - https://en.wikipedia.org/wiki/Quantum_Fourier_transform
@@ -564,7 +573,7 @@ def QFT(n_qubits=2, run_circuit=False) -> Gate:
         - a single qubit classic state (eg. |0>) will be decomposed to a series Σi wi|i> of basis |i>, where weight vector wi is periodic in phase
         - a superposition state (eg. a|110>+b|011>) will be decomposed to a series ΣjΣi wji|i> of basis |i>, where weight matrix wij is periodic in phase along both axis
     The formula:
-      |j> = (Σk e^(2*pi*i*(j*k/N))|k>) / sqrt(N)
+      |j> = (Σk e^(2*pi*i*(j*k/N))|k>) / sqrt(N), where N=2**k
     The unitary:
       [  1    1       1     ...    1
          1    w      w^2    ...  w^(N-1)
@@ -597,18 +606,18 @@ def QFT(n_qubits=2, run_circuit=False) -> Gate:
       u = (get_I(j-1) @ H @ get_I(n-j)) * u
 
       # CRx gates
-      for k in range(2, n-j+2):   # qubit |j> need apply from CRx[2] to CRx[n-j+1]
-        # prepare sswap |j> <-> |j+k-2>
+      for k in range(2, n-(j-1)+1):   # qubit |j> need apply from CRx[2] to CRx[n-(j-1)]
+        # prepare sswap |j+1> <-> |j+k-1>
         if k > 2:
-          sswap = get_I(j-1) @ get_sSWAP(k) @ get_I(n-j-k+1)
+          sswap = get_I(j) @ get_sSWAP(k-1) @ get_I(n-j-k+1)
         else:
           sswap = Meta.Null
 
-        # apply sswap move |j> to |j+k-2>
+        # apply sswap move |j+k-1> -> |j+1>
         u = sswap * u
-        # apply CRk on |j+k-2,j+k-1>, control bit is the low |j+k-1>
-        u = (get_I(j+k-3) @ (SWAP * CRk[k] * SWAP) @ get_I(n-j-k+1)) * u
-        # apply sswap move |j+k-2> to |j> (inverse)
+        # apply CRk on |j,j+1>
+        u = (get_I(j-1) @ CRk[k] @ get_I(n-j-1)) * u
+        # apply sswap move |j+1> -> |j+k-1> (inverse)
         u = sswap * u
 
     # apply final sSwap set
