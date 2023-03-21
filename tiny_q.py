@@ -494,6 +494,138 @@ CCNOT = Toffoli = Gate([
   [0, 0, 0, 0, 0, 0, 0, 1],
   [0, 0, 0, 0, 0, 0, 1, 0],
 ])
+CNOTNOT = (I @ SWAP) * (CNOT @ I) * (I @ SWAP) * (CNOT @ I)
+
+# identity gate caching
+Is = { }
+def get_I(n:int) -> Gate:
+  if n not in Is: Is[n] = I @ n
+  return Is[n]
+
+def Control(u: Gate, n_ctrl=1) -> Gate:
+  '''
+    one-qubit control gate:
+      [ I O
+        O U ]
+    where I is k-qubit identity, U is 1-qubits unitary, Os are zeros
+  '''
+  assert u.n_qubits == 1, 'the controllee should be single-qubit gate'
+  n_qubits = n_ctrl + 1
+  v = np.eye(2**n_qubits, dtype=u.v.dtype)
+  v[-2:, -2:] = u.v
+  return Gate(v)
+
+def sSWAP(n_qubits=3) -> Gate:
+  '''
+    sSWAP: a k-qubit SWAP only swapping the first qubit with the last
+      ----x----  ----x----
+      ----|----  ----|----
+      ----x----  ----|----
+                 ----x----
+    shows sSWAP(3) swapping |ijk> -> |kji> and sSWAP(4) swapping |abcd> -> |dbca>
+  '''
+  assert isinstance(n_qubits, int) and n_qubits >= 2, f'n_qubits should be an integer >=2 but got {n_qubits}'
+
+  is_odd   = n_qubits % 2 == 1
+  n_bubble = n_qubits // 2 - 1
+
+  # prepare bubble swaps
+  swaps: List[Gate] = [
+    get_I(j) @ SWAP @ get_I(n_qubits - 2*(j+2)) @ SWAP @ get_I(j)
+      for j in range(n_bubble)
+  ]
+
+  # bubble swap
+  u: Gate = None
+  for swap in swaps: u = swap * u
+
+  # core swap
+  if is_odd:
+    mid_swap1 = get_I(n_bubble) @ SWAP @ get_I(n_bubble + 1)
+    mid_swap2 = get_I(n_bubble + 1) @ SWAP @ get_I(n_bubble)
+    u = (mid_swap1 * mid_swap2 * mid_swap1) * u
+  else:
+    mid_swap = get_I(n_bubble) @ SWAP @ get_I(n_bubble)
+    u = mid_swap * u
+
+  # bubble swap (inverse)
+  for swap in reversed(swaps): u = swap * u
+  return u
+
+def QFT(n_qubits=2, run_circuit=False) -> Gate:
+  '''
+    Linear basis transform alike DFT: 
+      - https://en.wikipedia.org/wiki/Quantum_Fourier_transform
+      - https://zhuanlan.zhihu.com/p/474941485
+      - https://zhuanlan.zhihu.com/p/361711215
+      - https://blog.csdn.net/qq_43270444/article/details/118607318
+    Usage like:
+      - encode cstate binary string to the phase (exponent factor) of qubits, so that
+        - a single qubit classic state (eg. |0>) will be decomposed to a series Σi wi|i> of basis |i>, where weight vector wi is periodic in phase
+        - a superposition state (eg. a|110>+b|011>) will be decomposed to a series ΣjΣi wji|i> of basis |i>, where weight matrix wij is periodic in phase along both axis
+    The formula:
+      |j> = (Σk e^(2*pi*i*(j*k/N))|k>) / sqrt(N)
+    The unitary:
+      [  1    1       1     ...    1
+         1    w      w^2    ...  w^(N-1)
+         1   w^2     w^4    ... w^2(N-1)
+         ...
+         1 w^(N-1) w^2(N-1) ... w^(N-1)^2 ]
+    where w = e^(2*pi*i/N) is N=2^n equal devision of the circumference
+  '''
+  assert isinstance(n_qubits, int) and n_qubits >= 1, f'n_qubits should be an integer >=1 but got {n_qubits}'
+
+  if run_circuit:
+    '''
+      Rk = P(2*pi/2^k), 2^k equal devision of the circumference
+        [ 1        0
+          0  e^(2*pi*i/2^k) ]
+    '''
+
+    n = n_qubits  # N is the phase angle unit (kind of FT resolution)
+    CRk = { k: Control(P(2*pi/2**k)) for k in range(2, n+1) }   # CR2 ~ CRn
+    # caching to reuse gates
+    sSWAPs = { }
+    def get_sSWAP(n:int) -> Gate:
+      if n not in sSWAPs: sSWAPs[n] = sSWAP(n)
+      return sSWAPs[n]
+
+    u: Gate = None
+    # apply H-CRk set
+    for j in range(1, n+1):       # process each qubit |j>, from high |1> to low |n>
+      # Hadamard gate on |j>
+      u = (get_I(j-1) @ H @ get_I(n-j)) * u
+
+      # CRx gates
+      for k in range(2, n-j+2):   # qubit |j> need apply from CRx[2] to CRx[n-j+1]
+        # prepare sswap |j> <-> |j+k-2>
+        if k > 2:
+          sswap = get_I(j-1) @ get_sSWAP(k) @ get_I(n-j-k+1)
+        else:
+          sswap = Meta.Null
+
+        # apply sswap move |j> to |j+k-2>
+        u = sswap * u
+        # apply CRk on |j+k-2,j+k-1>, control bit is the low |j+k-1>
+        u = (get_I(j+k-3) @ (SWAP * CRk[k] * SWAP) @ get_I(n-j-k+1)) * u
+        # apply sswap move |j+k-2> to |j> (inverse)
+        u = sswap * u
+
+    # apply final sSwap set
+    for j in range(n // 2):
+      u = (get_I(j) @ get_sSWAP(n-2*j) @ get_I(j)) * u
+    return u
+
+  else:   # a cheaty way that constructs the unitary directly :(
+    N = 2**n_qubits
+    u = np.empty([N, N], dtype=DTYPE)
+    w = e^(2*pi*i/N)
+    for j in range(N):
+      for k in range(N):
+        u[j, k] = w**(j*k)
+    u /= np.sqrt(N)
+    return Gate(u)
+
 
 v0 = State.zero()   # |0>
 v1 = State.one()    # |1>
