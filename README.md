@@ -60,6 +60,8 @@ The main difference from existing framesworks is that, we distinguish types of o
 # use mul * for gate composition
 # u = Gate * Gate
 u = X * H
+# NOTE: the gate apply order starts from **right**
+u = gate3 * gate2 * gate1     # => gate3(gate2(gate1(v)))
 
 # use pipe | for gate application
 # q = Gate | State
@@ -70,6 +72,8 @@ q = X | v0
 u = H @ I
 #q = State @ State
 q = v0 @ v1
+# NOTE: the low qubit starts from **right**
+q = v_high @ v_mid @ v_low    # => |high,mid,low>
 
 # use > for virtual measurements
 # r = State > Measure, single measure
@@ -93,12 +97,12 @@ q < Measure
 class Meta:
   .n_qubits -> int              # qubit count of current system
   .dagger -> Meta               # dagger of State/Gate/MeasureOp
-  .__matmul__() -> State|Gate   # s1 @ s2: system expansion for state (v0 @ v1, v0 @ 3) or gate (X @ H, X @ 3)
 
 class State(Meta):
   .zero() -> State              # alloc a |0> string
   .one() -> State               # alloc a |1> string
   .__eq__() -> bool             # state equality (ignoring global phase)
+  .__matmul__() -> State        # v0 @ v1: state expansion
   .__lt__() -> Union            # v0 < Measure, real measure with state collapse
   .__gt__() -> Union            # v0 > Measure|Measure()|State|MeasureOp, virtual measurements
   .is_pure -> bool              # purity
@@ -116,6 +120,7 @@ class Gate(Meta):
   .__neg__() -> Gate            # -H, global negative
   .__xor__() -> Gate            # H^alpha, gate self-power
   .__mul__() -> Gate            # X * H: gate composition
+  .__matmul__() -> Gate         # X @ H: gate expansion
   .__or__() -> State            # X | v0: gate application
   .is_unitary -> bool           # unitary (should always be True)
   .is_hermitian -> bool         # hermitian (True for most gates)

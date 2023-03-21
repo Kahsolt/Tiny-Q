@@ -59,25 +59,23 @@ class Meta:
   def dagger(self) -> Meta:
     return self.__class__(self.v.dagger)
 
-  def __matmul__(self, other: Union[Meta, Meta.Null, int]) -> Union[State, Gate]:
-    '''
-      Meta: tensor product of sub-systems
-        - v0 @ v1 = |0>|1> = |01>: tensor product of two quantum systems
-        - H @ X: tensor product of two quantum gate
-      int: tensor product by self n_times
-        - v0 @ 3 = v('000')
-        - H @ 3 = H @ H @ H
-    '''
+  @staticmethod
+  def system_expansion(x:Meta, n:int) -> Meta:
+    ''' x @ n: self tensor product of system x by n times '''
+    assert isinstance(n, int) and n >= 0, 'n should be a non-negative integer'
+    if n == 0: return Meta.Null
 
+    r = x
+    for _ in range(1, n):
+      r = r @ x
+    return r
+
+  def __matmul__(self, other: Union[Meta, Meta.Null, int]) -> Union[State, Gate]:
     if isinstance(other, int):
-      if other == 0: return Meta.Null
-      r = self
-      for _ in range(1, other):
-        r = r @ self
-      return r
-  
+      return Meta.system_expansion(self, other)
+
     if other is Meta.Null: return self
-    assert isinstance(other, (State, Gate)), 'other should be a State or Gate, but got {type(other)}'
+    assert isinstance(other, (State, Gate)), f'other should be a State or Gate, but got {type(other)}'
     return self.__class__(np.kron(self.v, other.v))
 
   def __rmatmul__(self, other: Meta.Null) -> Union[State, Gate]:
@@ -123,6 +121,16 @@ class State(Meta):
           return False
     return True
 
+  def __matmul__(self, other: Union[State, int]) -> State:
+    '''
+      v0 @ v1 = |0>|1> = |01>: tensor product of two quantum systems
+      v0 @ 3 = v('000'), tensor product by self n_times
+    '''
+    return super().__matmul__(other)
+
+  def __rmatmul__(self, other: Meta.Null) -> State:
+    return super().__rmatmul__(other)
+
   def __lt__(self, other: Measure):
     '''
       v0 < Measure: project measure by computational basis, then make quantum state collapse **inplace**
@@ -158,6 +166,19 @@ class State(Meta):
       return np.abs(self.dagger.v @ other.dagger.v @ other.v @ self.v)
     else:
       raise TypeError(f'other should be a MeasureOp or a State, or the Measure object, but got {type(other)}({other})')
+
+  @property
+  def cval(self) -> int:
+    ''' |i> -> int(i), for classic state '''
+    idx = self.v.argmax()
+    val = self.v[idx]
+    assert abs(val) - 1.0 < EPS, f'cannot decode cbit of a super-positioned state, the max amplitude is {val}'
+    return idx
+
+  @property
+  def cbit(self) -> str:
+    ''' |i> -> bin(i), for classic state '''
+    return self._val_to_bit(self.cval)
 
   @property
   def is_pure(self) -> bool:
@@ -198,9 +219,12 @@ class State(Meta):
     ''' tr(rho) = Σ diag(rho): trace of density matrix '''
     return np.trace(self.density)
 
+  def _val_to_bit(self, val:int) -> str:
+    return bin(val)[2:].rjust(self.n_qubits, '0')
+
   @property
   def _cstates(self) -> List[str]:
-    return [bin(x)[2:].rjust(self.n_qubits, '0') for x in range(2**self.n_qubits)]
+    return [self._val_to_bit(x) for x in range(2**self.n_qubits)]
 
   def info(self, title='|phi>'):
     print(title)
@@ -257,7 +281,7 @@ class Gate(Meta):
     if not isinstance(other, Gate): raise NotImplemented
 
     if self.n_qubits > 1 and other is I:   # auto broadcast
-      other = other @ self.n_qubits
+      other = get_I(self.n_qubits)
     else:
       assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
 
@@ -281,9 +305,24 @@ class Gate(Meta):
 
   def __mul__(self, other: Gate) -> Gate:
     ''' H * X = HX: compose two unitary transforms up '''
+    if other is Meta.Null: return self
     assert isinstance(other, Gate), f'other should be a State, but got {type(other)}'
     assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
     return Gate(self.v @ other.v)
+
+  def __rmul__(self, other: Meta.Null) -> Gate:
+    assert other is Meta.Null, f'other should be Meta.Null, but got {type(other)}'
+    return self.__mul__(other)
+
+  def __matmul__(self, other: Union[Gate, int]) -> Gate:
+    '''
+      H @ X: tensor product of two quantum gate
+      H @ 3 = H @ H @ H, tensor product by self n_times
+    '''
+    return super().__matmul__(other)
+
+  def __rmatmul__(self, other: Meta.Null) -> Gate:
+    return super().__rmatmul__(other)
 
   def __or__(self, other: State) -> State:
     ''' H | v0 = H|0>: apply this unitary transform on a state '''
