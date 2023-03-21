@@ -12,6 +12,8 @@ import numpy as np
 np.set_printoptions(precision=4, suppress=True)
 np.seterr(divide='ignore', invalid='ignore')
 
+DTYPE = np.complex64
+EPS   = 1e-6
 
 if 'syntax hijack':
   from numpy import pi, sin, cos
@@ -28,13 +30,15 @@ if 'syntax hijack':
   e = float(np.e)
   i = np.complex64(0 + 1j)    # imaginary unit
 
-  EPS = 1e-6
-
 
 class Meta:
 
+  ''' represents a 1d vector or 2d tensor '''
+
+  Null = None     # empty system containing 0 qubits
+
   def __init__(self, v:Union[np.ndarray, list]):
-    x = np.asarray(v, dtype=np.complex64)
+    x = np.asarray(v, dtype=DTYPE)
     self.v = array(x.shape, buffer=x, dtype=x.dtype)
 
   def __str__(self) -> str:
@@ -55,13 +59,30 @@ class Meta:
   def dagger(self) -> Meta:
     return self.__class__(self.v.dagger)
 
-  @staticmethod
-  def system_expansion(x:Union[State, Gate], n:int=1) -> Union[State, Gate]:
-    ''' s1 @ s2: tensor dot of sub-systems '''
-    r = x
-    for _ in range(1, n):
-      r = r @ x
-    return r
+  def __matmul__(self, other: Union[Meta, Meta.Null, int]) -> Union[State, Gate]:
+    '''
+      Meta: tensor product of sub-systems
+        - v0 @ v1 = |0>|1> = |01>: tensor product of two quantum systems
+        - H @ X: tensor product of two quantum gate
+      int: tensor product by self n_times
+        - v0 @ 3 = v('000')
+        - H @ 3 = H @ H @ H
+    '''
+
+    if isinstance(other, int):
+      if other == 0: return Meta.Null
+      r = self
+      for _ in range(1, other):
+        r = r @ self
+      return r
+  
+    if other is Meta.Null: return self
+    assert isinstance(other, (State, Gate)), 'other should be a State or Gate, but got {type(other)}'
+    return self.__class__(np.kron(self.v, other.v))
+
+  def __rmatmul__(self, other: Meta.Null) -> Union[State, Gate]:
+    assert other is Meta.Null, f'other should be Meta.Null, but got {type(other)}'
+    return self
 
 
 class State(Meta):
@@ -96,16 +117,11 @@ class State(Meta):
     c = self.v / other.v            # assume c * |v> = |w>, where 'c' is a complex number
     vals = c[~np.isnan(c)]          # if vals is consistent to only one value, then 'c' is a valid global phase
     n_vals = len(vals)
-    for i in range(0, n_vals-1):    # pairwise modulo diff should < EPS, if values are consistent
-      for j in range(i+1, n_vals):
-        if np.abs(vals[i] - vals[j]) > EPS:
+    for j in range(0, n_vals-1):    # pairwise modulo diff should < EPS, if values are consistent
+      for k in range(j+1, n_vals):
+        if np.abs(vals[j] - vals[k]) > EPS:
           return False
     return True
-
-  def __matmul__(self, other: State) -> State:
-    ''' v0 @ v1 = |0>|1> = |01>: tensor product of two quantum systems '''
-    assert isinstance(other, State), f'other should be a State, but got {type(other)}'
-    return State(np.kron(self.v, other.v))
 
   def __lt__(self, other: Measure):
     '''
@@ -241,7 +257,7 @@ class Gate(Meta):
     if not isinstance(other, Gate): raise NotImplemented
 
     if self.n_qubits > 1 and other is I:   # auto broadcast
-      other = Meta.system_expansion(other, self.n_qubits)
+      other = other @ self.n_qubits
     else:
       assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
 
@@ -269,17 +285,12 @@ class Gate(Meta):
     assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
     return Gate(self.v @ other.v)
 
-  def __matmul__(self, other: Gate) -> Gate:
-    ''' H @ X: tensor product of two quantum gate '''
-    assert isinstance(other, Gate), 'other should be a Gate'
-    return Gate(np.kron(self.v, other.v))
-
   def __or__(self, other: State) -> State:
     ''' H | v0 = H|0>: apply this unitary transform on a state '''
     assert isinstance(other, State), f'other should be a State, but got {type(other)}'
 
     if self.n_qubits == 1 and other.n_qubits > 1:   # single-qubit gate auto broadcast
-      self = Meta.system_expansion(self, other.n_qubits)
+      self = self @ other.n_qubits
     else:
       assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
 
