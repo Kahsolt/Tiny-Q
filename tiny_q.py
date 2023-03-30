@@ -635,6 +635,8 @@ def QFT(n_qubits=2, run_circuit=True) -> Gate:
     u /= np.sqrt(N)
     return Gate(u)
 
+iQFT = lambda n_qubits=2, run_circuit=True: QFT(n_qubits, run_circuit).dagger
+
 
 v0 = State.zero()   # |0>
 v1 = State.one()    # |1>

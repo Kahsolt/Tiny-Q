@@ -20,6 +20,14 @@ for n in range(1, 7+1):
   qft_c = QFT(n, run_circuit=True)
   assert qft_t == qft_c
 
+# QFT & iQFT
+q = bell_state
+q.info()
+q_qft = QFT(q.n_qubits) | q
+q_qft.info()
+q_iqft = iQFT(q.n_qubits) | q_qft
+q_iqft.info()
+
 
 # what happens on bell_state & ghz_state?
 q = bell_state
