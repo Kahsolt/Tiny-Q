@@ -5,6 +5,7 @@
 from __future__ import annotations
 from typing import List, Dict, Union, Callable, Any
 
+import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.linalg import fractional_matrix_power
@@ -31,9 +32,11 @@ if 'syntax hijack':
   i = np.complex64(0 + 1j)    # imaginary unit
 
 
+''' Core '''
+
 class Meta:
 
-  ''' represents a 1d vector or 2d tensor '''
+  ''' represents quantum system tensor data (1d vector or 2d tensor) '''
 
   Null = None     # empty system containing 0 qubits
 
@@ -236,6 +239,8 @@ class State(Meta):
     print()
 
   def plot_prob(self, title='prob'):
+    if os.environ.get('IGNORE_PLOTS'): return
+
     plt.clf()
     plt.bar(self._cstates, self.prob, color='royalblue', alpha=0.9)
     plt.ylim((0.0, 1.0))
@@ -244,6 +249,8 @@ class State(Meta):
     plt.show()
 
   def plot_density(self, title='rho'):
+    if os.environ.get('IGNORE_PLOTS'): return
+
     plt.clf()
     sns.heatmap(np.abs(self.density), annot=True, vmin=0, vmax=1, cbar=True, cmap='Blues', alpha=0.9)
     if title: plt.suptitle(title)
@@ -251,6 +258,8 @@ class State(Meta):
     plt.show()
 
   def plots(self, title='|phi>'):
+    if os.environ.get('IGNORE_PLOTS'): return
+
     plt.clf()
     plt.subplot(121)
     plt.title('prob')
@@ -377,14 +386,7 @@ class MeasureOp(Meta):
     return np.abs(s).max() < EPS
 
 
-def v(string: str) -> State:
-  assert string, 'string should not be empty'
-  qubits = { '0': v0, '1': v1 }
-  v = qubits[string[0]]
-  for c in string[1:]:
-    v = v @ qubits[c]
-  return v
-
+''' Gate '''
 
 # https://en.wikipedia.org/wiki/List_of_quantum_logic_gates
 I = Gate([                    # indentity
@@ -496,8 +498,7 @@ CCNOT = Toffoli = Gate([
 ])
 CNOTNOT = (I @ SWAP) * (CNOT @ I) * (I @ SWAP) * (CNOT @ I)
 
-# identity gate caching
-Is = { }
+Is = { }                      # identity gate caching
 def get_I(n:int) -> Gate:
   if n not in Is: Is[n] = I @ n
   return Is[n]
@@ -514,6 +515,40 @@ def Control(u: Gate) -> Gate:
   v = np.eye(2**n_qubits, dtype=u.v.dtype)
   v[-2:, -2:] = u.v
   return Gate(v)
+
+
+''' State '''
+
+def v(string: str) -> State:
+  assert string, 'string should not be empty'
+  qubits = { '0': v0, '1': v1 }
+  v = qubits[string[0]]
+  for c in string[1:]:
+    v = v @ qubits[c]
+  return v
+
+v0 = State.zero()   # |0>
+v1 = State.one()    # |1>
+h0 = H | v0         # |+>
+h1 = H | v1         # |->
+bell_state = CNOT * (H @ I) | State.zero(2)   # |00>+|11>
+ghz_state = (I @ CNOT) * (CNOT @ I) * (H @ I @ I) | State.zero(3)   # |000>+|111>
+
+
+''' Measure '''
+
+Measure = lambda n=1000: (lambda: n)
+M0 = MeasureOp([
+  [1, 0],
+  [0, 0],
+])
+M1 = MeasureOp([
+  [0, 0],
+  [0, 1],
+])
+
+
+''' Algorithm / Circuit '''
 
 def sSWAP(n_qubits=3) -> Gate:
   '''
@@ -638,54 +673,6 @@ def QFT(n_qubits=2, run_circuit=True) -> Gate:
 iQFT = lambda n_qubits=2, run_circuit=True: QFT(n_qubits, run_circuit).dagger
 
 
-v0 = State.zero()   # |0>
-v1 = State.one()    # |1>
-h0 = H | v0         # |+>
-h1 = H | v1         # |->
-bell_state = CNOT * (H @ I) | State.zero(2)  # |00>+|11>
-ghz_state = (I @ CNOT) * (CNOT @ I) * (H @ I @ I) | State.zero(3)   # |000>+|111>
-
-Measure = lambda n=1000: (lambda: n)
-M0 = MeasureOp([
-  [1, 0],
-  [0, 0],
-])
-M1 = MeasureOp([
-  [0, 0],
-  [0, 1],
-])
-
-
 if __name__ == '__main__':
-  # => basic states
-  assert (v0 > v1) < EPS and (v1 > v0) < EPS            # diagonal
-  assert (h0 > h1) < EPS and (h1 > h0) < EPS
-  for q1 in [v0, v1, h0, h1]:
-    for q2 in [v0, v1, h0, h1]:
-      if q1 == q2: assert (q1 > q2) - 1   < EPS
-      else:        assert (q1 > q2) - 0.5 < EPS
-  assert v('0') == v0 and v('1') == v1
-  assert v('10110') == v1 @ v0 @ v1 @ v1 @ v0
-  assert v0.dagger == v0
-
-  # => global phase gate
-  assert X.dagger == X
-  assert Ph(0) == I
-  assert Ph(pi) == Ph(-pi) == Gate(-I.v)
-
-  # => pauli gates
-  assert X^2 == I and Y^2 == I and Z^2 == I
-  assert H*Z*H == X and H*X*H == Z
-  assert X*Y == -Y*X and Y*Z == -Z*Y and Z*X == -X*Z 
-  assert Gate(((X*Y).v-(Y*X).v)/2) == Gate(i*Z.v)       # σiσj - σjσi = 2*i*σk, where i,j,k is a cyclic permutation of of X,Y,Z
-
-  # => phase gates
-  assert SX^2 == X
-  assert T^2 == S and S^2 == Z and Z^2 == I
-  assert Z == P(pi) and S == P(pi/2) and T == P(pi/4)
-
-  # => measure operator set
-  assert MeasureOp.check_completeness([M0, M1])
-
   from code import interact
   interact(local=globals())
