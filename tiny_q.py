@@ -672,6 +672,48 @@ def QFT(n_qubits=2, run_circuit=True) -> Gate:
 
 iQFT = lambda n_qubits=2, run_circuit=True: QFT(n_qubits, run_circuit).dagger
 
+def phase_estimate(u:Gate, phi:State=None, n_prec:int=4) -> State:
+  '''
+    Estimate the eigen value of a unitary U with eigen vector |phi>, i.e.:
+      - https://en.wikipedia.org/wiki/Quantum_phase_estimation_algorithm
+      - https://zhuanlan.zhihu.com/p/84568388
+      - https://blog.csdn.net/qq_45777142/article/details/109904362
+    The formula:
+      U|phi> = e^(2*pi*i*theta)|phi>
+    note that eigen value is a global phase, it can be further reduced to the phase angle `theta`
+    NOTE: 总之，相位估计可以给定一个特征向量的情况下，估计一个酉算子的一个对应特征值的相位。
+  '''
+  assert isinstance(n_prec, int) and n_prec >= 1, 'n_prec should be an integer >=1'
+
+  t = n_prec
+  # when U's eigen vector is also unknown, just uniformly random init and take it as 
+  # kinda superposition of eigen vectors, we still have non-zero probability to get it :pray:
+  if phi is None: phi = H | v('0' * u.n_qubits)
+
+  '''
+    |0>--H------------------------x--------|0>+e^2*pi*i(2^(t-1)*theta)|1>--|      |             (prec: 0.00..01, 1/2^(t-1))
+            (repeat t times)     ...                                       | iQFT |--|theta>
+    |0>--H--------------x---------|--------|0>+e^2*pi*i(2^1*theta)|1>------|      |             (prec: 0.1, 1/2=0.5)
+    |0>--H-----x--------|---------|--------|0>+e^2*pi*i(2^0*theta)|1>------|      |             (prec: 1)
+    |u>--H--|U^2^0|--|U^2^1|--|U^2^(t-1)|--|u>    (aka. |phi> kept unchanged)
+  '''
+  # apply H set
+  c = (H @ t) @ I     # t+1 qubits
+  # apply C-U series
+  for j in range(t):
+    # prepare sSwap |t-j> <-> |t>
+    sswap = get_I(t-j-1) @ (sSWAP(j+1) if j > 0 else I) @ I
+    # apply sSwap
+    c = sswap * c
+    # apply control-U
+    c = get_I(t-1) @ Control(u ^ (2**j))    # first register |00..0> controls on second register |phi>
+    # inverse sSwap
+    c = sswap * c
+  # apply iQFT
+  c = (iQFT(t) @ I) * c
+
+  return c | (v('0' * t) @ phi)
+
 
 if __name__ == '__main__':
   from code import interact
