@@ -315,13 +315,24 @@ class Gate(Meta):
   def __mul__(self, other: Gate) -> Gate:
     ''' H * X = HX: compose two unitary transforms up '''
     if other is Meta.Null: return self
-    assert isinstance(other, Gate), f'other should be a State, but got {type(other)}'
+    assert isinstance(other, Gate), f'other should be a Gate, but got {type(other)}'
     assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
     return Gate(self.v @ other.v)
 
   def __rmul__(self, other: Meta.Null) -> Gate:
     assert other is Meta.Null, f'other should be Meta.Null, but got {type(other)}'
     return self.__mul__(other)
+
+  def __lshift__(self, other: Gate) -> Gate:
+    '''
+      Grammar sugar of **inplace** u = (gates * other * some) * u, nice to build a circuit module :)
+        u = some << other << gates
+      is eqv to
+        u = (gates * other * some) * u
+    '''
+    assert isinstance(other, Gate), f'other should be a Gate, but got {type(other)}'
+    self.v = (other * self).v
+    return self
 
   def __matmul__(self, other: Union[Gate, int]) -> Gate:
     '''

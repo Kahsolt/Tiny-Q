@@ -53,15 +53,17 @@ now exiting InteractiveConsole...
 
 
 The main difference from existing framesworks is that, we distinguish types of operations 
--- `gate composition (*)`, `gate application (|)`, `system expansion (@)`, `quantum measure (>,<)` 
+-- `gate composition (*/<<)`, `gate application (|)`, `system expansion (@)`, `quantum measure (>,<)` 
 -- by different python operators to make formula syntax more clear :)
 
 ```python
-# use mul * for gate composition
-# u = Gate * Gate
+# use mul * or lshift << for gate composition, mind the gate apply order
+# u = Gate * Gate (more like math formula, reducing from **right**)
 u = X * H
-# NOTE: the gate apply order starts from **right**
-u = gate3 * gate2 * gate1     # => gate3(gate2(gate1(v)))
+u = gate3 * gate2 * gate1
+# u = Gate << Gate (more like programs, running from **left**, modify **inplace**)
+u = H << X
+u = gate1 << gate2 << gate3
 
 # use pipe | for gate application
 # q = Gate | State
@@ -120,6 +122,7 @@ class Gate(Meta):
   .__neg__() -> Gate            # -H, global negative
   .__xor__() -> Gate            # H^alpha, gate self-power
   .__mul__() -> Gate            # X * H: gate composition
+  .__lshift__() -> Gate         # H << X: gate composition (reverse order of __mul__)
   .__matmul__() -> Gate         # X @ H: gate expansion
   .__or__() -> State            # X | v0: gate application
   .is_unitary -> bool           # unitary (should always be True)
