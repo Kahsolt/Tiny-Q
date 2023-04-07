@@ -41,7 +41,7 @@ class Meta:
   Null = None     # empty system containing 0 qubits
 
   def __init__(self, v:Union[np.ndarray, list]):
-    x = np.asarray(v, dtype=DTYPE)
+    x = np.ascontiguousarray(v, dtype=DTYPE)
     self.v = array(x.shape, buffer=x, dtype=x.dtype)
 
   def __str__(self) -> str:
@@ -445,11 +445,11 @@ RZ1 = lambda theta: Gate([    # another form of RZ except a g_phase of e^(i*thet
   [1, 0],
   [0, e^(i*theta)],
 ])
-U = lambda theta, phi, lmbd: Gate([
-  [cos(theta/2), -e^(-i*lmbd)*sin(theta/2)],
-  [e^(-i*phi)*sin(theta/2), e^(i*(lmbd+phi))*cos(theta/2)],
+U = lambda theta, phi, lmbd: Gate([                                                     # universal Z-Y decomposition
+  [          cos(theta/2), -e^(i* lmbd)     *sin(theta/2)],
+  [e^(i*phi)*sin(theta/2),  e^(i*(lmbd+phi))*cos(theta/2)],
 ])
-U1 = lambda alpha, beta, gamma, delta: Ph(alpha) * RZ(beta) * RY(gamma) * RZ(delta)     # universal Z-Y decomposition
+U1 = lambda alpha, beta, gamma, delta: Ph(alpha) * RZ(beta) * RY(gamma) * RZ(delta)     # universal Z-Y decomposition with global phase
 SWAP = Gate([
   [1, 0, 0, 0],
   [0, 0, 1, 0],
@@ -695,7 +695,7 @@ def phase_estimate(u:Gate, phi:State=None, n_prec:int=4) -> State:
             (repeat t times)     ...                                       | iQFT |--|theta>
     |0>--H--------------x---------|--------|0>+e^2*pi*i(2^1*theta)|1>------|      |             (prec: 0.1, 1/2=0.5)
     |0>--H-----x--------|---------|--------|0>+e^2*pi*i(2^0*theta)|1>------|      |             (prec: 1)
-    |u>--H--|U^2^0|--|U^2^1|--|U^2^(t-1)|--|u>    (aka. |phi> kept unchanged)
+    |u>-----|U^2^0|--|U^2^1|--|U^2^(t-1)|--|u>    (aka. |phi> kept unchanged)
   '''
   # apply H set
   c = (H @ t) @ I     # t+1 qubits
