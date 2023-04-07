@@ -457,8 +457,8 @@ RZ1 = lambda theta: Gate([    # another form of RZ except a g_phase of e^(i*thet
   [0, e^(i*theta)],
 ])
 U = lambda theta, phi, lmbd: Gate([                                                     # universal Z-Y decomposition
-  [          cos(theta/2), -e^(i* lmbd)     *sin(theta/2)],
-  [e^(i*phi)*sin(theta/2),  e^(i*(lmbd+phi))*cos(theta/2)],
+  [          cos(theta/2), -(e^(i* lmbd)     *sin(theta/2))],
+  [e^(i*phi)*sin(theta/2),   e^(i*(lmbd+phi))*cos(theta/2)],
 ])
 U1 = lambda alpha, beta, gamma, delta: Ph(alpha) * RZ(beta) * RY(gamma) * RZ(delta)     # universal Z-Y decomposition with global phase
 SWAP = Gate([
@@ -724,6 +724,70 @@ def phase_estimate(u:Gate, phi:State=None, n_prec:int=4) -> State:
   c = (iQFT(t) @ I) * c
 
   return c | (v('0' * t) @ phi)
+
+def amplitude_encode(b: np.ndarray) -> State:
+  ''' Amplitude encoding a unit vector b to |b> '''
+  assert (np.linalg.norm(b) - 1.0) < 1e-5, 'b should be a unit vector'
+
+  theta = 2 * np.arccos(b[0])
+  return (Z if b[1] < 0 else I) * RY(theta) | v0
+
+def HHL(A: np.ndarray, b: np.ndarray, t0=2*pi, r=4) -> State:
+  '''
+    Solve linear equations in a quantum manner:
+      - https://arxiv.org/abs/1110.2232
+      - https://en.wikipedia.org/wiki/Quantum_algorithm_for_linear_systems_of_equations
+    Implementation of the toy HHL circuit solving a minimal 2x2 system using only 4 qubits
+    given in essay "Quantum Circuit Design for Solving Linear Systems of Equations" by Yudong Cao, et al.
+      - https://arxiv.org/abs/0811.3171
+
+    q0: |0>──────────────────────────────────────────────┤RY(pi/8)├┤RY(pi/16)├─────────
+    q1: |0>─┤H├───────────────────■───────X──────■───┤H├X─────■────────┼─────┼        ┼
+    q2: |0>─┤H├────■──────────────┼───────X┤H├┤S.dag├───X──────────────■─────|U.dagger┼
+    q3: |b>─┤exp(iA(t0/4))├┤exp(iA(t0/2))├───────────────────────────────────┼        ┼
+  '''
+  import scipy.linalg as spl
+
+  assert np.allclose(A, A.conj().T), 'A should be a hermitian'
+  assert (np.linalg.norm(b) - 1.0) < 1e-5, 'b should be a unit vector'
+
+  ''' enc |b> '''
+  enc_b = v('000') @ amplitude_encode(b)
+
+  ''' QPE '''
+  u = I @ H @ H @ I
+
+  u_A1 = spl.expm(1j* A * (t0/4))
+  u << (get_I(2) @ Control(Gate(u_A1)))
+
+  swap12 = I @ SWAP @ I
+  u << swap12
+  u_A2 = spl.expm(1j* A * (t0/2))
+  u << (get_I(2) @ Control(Gate(u_A2)))
+  u << swap12
+
+  u << swap12
+  u << (get_I(2) @ H @ I)
+  u << (I @ Control(S.dagger) @ I)
+  u << (I @ H @ get_I(2))
+  u << swap12
+
+  QPE = u
+
+  ''' RY '''
+  swap01 = SWAP @ get_I(2)
+  u =  swap01 * (Control(RY(2*pi/2**r)) @ get_I(2)) * swap01
+  u << swap12
+  u << swap01 * (Control(RY(pi/2**r)) @ get_I(2)) * swap01
+  u << swap12
+
+  CR = u
+
+  ''' iQPE '''
+  iQPE = QPE.dagger
+
+  ''' final state '''
+  return QPE << CR << iQPE | enc_b
 
 
 if __name__ == '__main__':
