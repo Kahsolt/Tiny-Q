@@ -3,15 +3,22 @@
 # Create Time: 2023/03/15 
 
 from __future__ import annotations
-from typing import List, Dict, Union, Callable, Any
 
 import os
-import matplotlib.pyplot as plt
-import seaborn as sns
+from typing import List, Dict, Union, Callable, Any
+
 from scipy.linalg import fractional_matrix_power
 import numpy as np
 np.set_printoptions(precision=4, suppress=True)
 np.seterr(divide='ignore', invalid='ignore')
+
+try:
+  import matplotlib.pyplot as plt
+  import seaborn as sns
+except ImportError:
+  print('>> warn: matplotlib or seaborn not installed, plots will be ignored :(')
+  print('>> please run "pip install -U matplotlib seaborn" to install them')
+  os.environ['IGNORE_PLOTS'] = 'true'
 
 DTYPE = np.complex64
 EPS   = 1e-6

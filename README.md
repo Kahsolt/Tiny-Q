@@ -6,7 +6,7 @@
 
 ![demo](img/demo.png)
 
-
+=> One-command installation: `pip install .`
 => Start interactive python shell with Tiny-Q environment: `python tiny_q.py`
 
 ```python
