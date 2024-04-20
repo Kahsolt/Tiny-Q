@@ -11,7 +11,9 @@
 
 ⚪ From PyPI
 
-- `pip install tiny_q`
+ℹ Due to the name conflict with an [existing pypi package](https://pypi.org/project/TinyQ/), you have to address `TinyQSim` rather than `TinyQ` :(
+
+- `pip install TinyQSim`
 
 ⚪ From source
 
