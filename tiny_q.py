@@ -9,16 +9,24 @@ from typing import List, Dict, Union, Callable, Any
 
 from scipy.linalg import fractional_matrix_power
 import numpy as np
+from numpy import ndarray
 np.set_printoptions(precision=4, suppress=True)
 np.seterr(divide='ignore', invalid='ignore')
 
 try:
   import matplotlib.pyplot as plt
-  import seaborn as sns
-except ImportError:
-  print('>> warn: matplotlib or seaborn not installed, plots will be ignored :(')
-  print('>> please run "pip install -U matplotlib seaborn" to install them')
-  os.environ['IGNORE_PLOTS'] = 'true'
+  HAS_MATPLOT = True
+  try:
+    import seaborn as sns
+    HAS_SEABORN = True
+  except ImportError:
+    print('>> warn: seaborn not installed, some features will be disabled :(')
+    HAS_SEABORN = False
+except:
+  print('>> warn: matplotlib not installed, plots will be unavailbale :(')
+  HAS_MATPLOT = False
+
+IGNORE_PLOTS = os.getenv('IGNORE_PLOTS')
 
 DTYPE = np.complex64
 EPS   = 1e-6
@@ -28,15 +36,19 @@ if 'syntax hijack':
 
   class float(float):
     def __xor__(self, other):
+      # NOTE: the operator priority of __xor__ (^) is lower than __pow__ (**) in Python
+      # so just mind your expression order :(
       return other.__rpow__(self)
 
-  class array(np.ndarray):
+  class array(ndarray):
     @property
     def dagger(self):
       return self.conj().T
 
+  π = pi
   e = float(np.e)
   i = np.complex64(0 + 1j)    # imaginary unit
+  sqrt2 = np.sqrt(2)          # √2
 
 
 ''' Core '''
@@ -47,7 +59,7 @@ class Meta:
 
   Null = None     # empty system containing 0 qubits
 
-  def __init__(self, v:Union[np.ndarray, list]):
+  def __init__(self, v:Union[ndarray, list]):
     x = np.ascontiguousarray(v, dtype=DTYPE)
     self.v = array(x.shape, buffer=x, dtype=x.dtype)
 
@@ -100,7 +112,7 @@ class State(Meta):
   def __init__(self, v):
     super().__init__(v)
 
-    assert isinstance(self.v, np.ndarray), 'state vector should be np.ndarray type'
+    assert isinstance(self.v, ndarray), 'state vector should be ndarray type'
     assert len(self.shape) == 1, 'state vector should be 1-dim array'
     assert np.log2(self.shape[0]) % 1 == 0.0, 'state vector length should be power of 2'
 
@@ -203,17 +215,17 @@ class State(Meta):
     return np.trace(np.linalg.matrix_power(self.density, 2)) >= 1.0 - EPS
 
   @property
-  def amp(self) -> np.ndarray:
+  def amp(self) -> ndarray:
     ''' |phi> = Σi αi|i>, amplitude of i-th basis amp(|i>) = abs(αi) '''
     return np.abs(self.v)
 
   @property
-  def prob(self) -> np.ndarray:
+  def prob(self) -> ndarray:
     ''' |phi> = Σi αi|i>, probability of i-th basis prob(|i>) = |αi|^2 '''
     return self.amp ** 2
 
   @property
-  def density(self) -> np.ndarray:
+  def density(self) -> ndarray:
     '''
       rho := |phi><phi| (pure state) or Σi αi|phi_i><phi_i| (mixed state), density matrix
         - diag(rho) indicates probability of each classic state it'll collapses into after measurement
@@ -246,7 +258,8 @@ class State(Meta):
     print()
 
   def plot_prob(self, title='prob'):
-    if os.environ.get('IGNORE_PLOTS'): return
+    if IGNORE_PLOTS: return
+    if not HAS_MATPLOT: return
 
     plt.clf()
     plt.bar(self._cstates, self.prob, color='royalblue', alpha=0.9)
@@ -256,16 +269,21 @@ class State(Meta):
     plt.show()
 
   def plot_density(self, title='rho'):
-    if os.environ.get('IGNORE_PLOTS'): return
+    if IGNORE_PLOTS: return
+    if not HAS_MATPLOT: return
 
     plt.clf()
-    sns.heatmap(np.abs(self.density), annot=True, vmin=0, vmax=1, cbar=True, cmap='Blues', alpha=0.9)
+    if HAS_SEABORN:
+      sns.heatmap(np.abs(self.density), vmin=0, vmax=1, cmap='Blues', cbar=True, annot=True, alpha=0.9)
+    else:
+      plt.imshow(np.abs(self.density), vmin=0, vmax=1, cmap='Blues', alpha=0.9)
     if title: plt.suptitle(title)
     plt.tight_layout()
     plt.show()
 
   def plots(self, title='|phi>'):
-    if os.environ.get('IGNORE_PLOTS'): return
+    if IGNORE_PLOTS: return
+    if not HAS_MATPLOT: return
 
     plt.clf()
     plt.subplot(121)
@@ -274,7 +292,10 @@ class State(Meta):
     plt.ylim((0.0, 1.0))
     plt.subplot(122)
     plt.title('density')
-    sns.heatmap(np.abs(self.density), annot=True, vmin=0, vmax=1, cbar=True, cmap='Blues', alpha=0.9)
+    if HAS_SEABORN:
+      sns.heatmap(np.abs(self.density), vmin=0, vmax=1, cmap='Blues', cbar=True, annot=True, alpha=0.9)
+    else:
+      plt.imshow(np.abs(self.density), vmin=0, vmax=1, cmap='Blues', alpha=0.9)
     if title: plt.suptitle(title)
     plt.tight_layout()
     plt.show()
@@ -287,7 +308,7 @@ class Gate(Meta):
   def __init__(self, v):
     super().__init__(v)
 
-    assert isinstance(self.v, np.ndarray), 'gate matrix should be np.ndarray type'
+    assert isinstance(self.v, ndarray), 'gate matrix should be ndarray type'
     assert len(self.shape) == 2, 'gate matrix should be 2-dim array'
     assert self.shape[0] == self.shape[1], 'gate matrix should be square'
     assert np.log2(self.shape[0]) % 1 == 0.0, 'gate matrix size should be power of 2'
@@ -304,8 +325,8 @@ class Gate(Meta):
     return np.abs(self.v - other.v).max() < EPS
 
   def __neg__(self) -> Gate:
-    ''' Ph(-pi)*U == -U '''
-    return Ph(-pi) * self
+    ''' Ph(-π)*U == -U '''
+    return Ph(-π) * self
 
   def __pow__(self, pow: float):
     ''' H**pow: gate self-power '''
@@ -333,7 +354,7 @@ class Gate(Meta):
   def __lshift__(self, other: Gate) -> Gate:
     '''
       Grammar sugar of **inplace** u = (gates * other * some) * u, nice to build a circuit module :)
-        u = some << other << gates
+        u << (some << other << gates)
       is eqv to
         u = (gates * other * some) * u
     '''
@@ -385,7 +406,7 @@ class MeasureOp(Meta):
   def __init__(self, v):
     super().__init__(v)
 
-    assert isinstance(self.v, np.ndarray), 'measure operator should be np.ndarray type'
+    assert isinstance(self.v, ndarray), 'measure operator should be ndarray type'
     assert len(self.shape) == 2, 'measure operator should be 2-dim array'
     assert self.shape[0] == self.shape[1], 'measure operator should be square'
     assert np.log2(self.shape[0]) % 1 == 0.0, 'measure operator size should be power of 2'
@@ -407,95 +428,116 @@ class MeasureOp(Meta):
 ''' Gate '''
 
 # https://en.wikipedia.org/wiki/List_of_quantum_logic_gates
-I = Gate([                    # indentity
+# https://www.mindspore.cn/mindquantum/docs/en/master/core/mindquantum.core.gates.html#module-mindquantum.core.gates
+I = Gate([              # indentity
   [1, 0],
   [0, 1],
 ])
-Ph = lambda theta: Gate([     # alter global phase, e^(-i*theta*I)
-  [e^(-i*theta), 0],
-  [0, e^(-i*theta)],
+Ph = lambda θ: Gate([   # e^(-i*θ*I), exp(iδI), global phase
+  [e^(-i*θ), 0],
+  [0, e^(-i*θ)],
 ])
-X = NOT = Gate([              # flip amplitude
+H = Gate(np.asarray([   # scatter basis
+  [1,  1],
+  [1, -1],
+]) / sqrt2)
+X = NOT = Gate([        # flip amplitude
   [0, 1],
   [1, 0],
 ])
-Y = Gate([                    # flip amplitude & flip phase by imag
+Y = Gate([              # flip amplitude & flip phase by imag
   [0, -i],
   [i,  0],
 ])
-Z = Gate([                    # flip phase by real, Z = P(pi)
+Z = Gate([              # flip phase by real, Z = P(π)
   [1,  0],
-  [0, -1],                    # e^(i*pi) == -1
+  [0, -1],              # e^(i*π) == -1
 ])
-H = Gate(np.asarray([         # scatter basis, make superposition
-  [1,  1],
-  [1, -1],
-]) / np.sqrt(2))
-SX = V = Gate(np.asarray([    # sqrt(X)
+S = Gate([              # S = Z^(1/2) = P(π/2)
+  [1, 0],
+  [0, e^(i*π/2)],       # e^(i*π/2) == i
+])
+T = Gate([              # T = S^(1/2) = Z^(1/4) = P(π/4)
+  [1, 0],
+  [0, e^(i*π/4)],       # e^(i*π/4) == (1+i)/√2
+])
+P = lambda φ: Gate([    # alter phase
+  [1, 0],
+  [0, e^(i*φ)],
+])
+X1 = SX = V = Gate(np.asarray([    # √X
   [1 + i, 1 - i],
   [1 - i, 1 + i],
 ]) / 2)
-P = lambda phi: Gate([        # alter phase
-  [1, 0],
-  [0, e^(i*phi)],
+RX = lambda θ: Gate([   # e^(-i*X*θ/2)
+  [cos(θ/2), -i*sin(θ/2)],
+  [-i*sin(θ/2), cos(θ/2)],
 ])
-S = Gate([                    # alter phase, S = Z^(1/2) = P(pi/2)
-  [1, 0],
-  [0, e^(i*pi/2)],           # e^(i*pi/2) == i
+RY = lambda θ: Gate([   # e^(-i*Y*θ/2)
+  [cos(θ/2), -sin(θ/2)],
+  [sin(θ/2),  cos(θ/2)],
 ])
-T = Gate([                    # alter phase, T = S^(1/2) = Z^(1/4) = P(pi/4)
-  [1, 0],
-  [0, e^(i*pi/4)],            # e^(i*pi/4) == (1+i)/sqrt(2)
+RZ = lambda θ: Gate([   # e^(-i*Z*θ/2)
+  [e^(-i*θ/2), 0],
+  [0, e^(i*θ/2)],
 ])
-RX = lambda theta: Gate([     # alter amplitude, e^(-i*X*theta/2)
-  [cos(theta/2), -i*sin(theta/2)],
-  [-i*sin(theta/2), cos(theta/2)],
+U1 = lambda φ: P(φ)                   # = P(φ)
+U2 = lambda φ, λ: Gate(np.asarray([   # = P(φ+λ)*U(λ,π/2,-λ)
+  [1,      -e^(i*   λ)],
+  [e^(i*φ), e^(i*(φ+λ))],
+]) / sqrt2)
+U3 = lambda θ, φ, λ: Gate([           # = P(φ+λ)*U(λ,θ,-λ)
+  [        cos(θ/2), -(e^(i*   λ) *sin(θ/2))],
+  [e^(i*φ)*sin(θ/2),   e^(i*(φ+λ))*cos(θ/2)],
 ])
-RY = lambda theta: Gate([     # alter amplitude, e^(-i*Y*theta/2)
-  [cos(theta/2), -sin(theta/2)],
-  [sin(theta/2),  cos(theta/2)],
+U = lambda θ, φ, λ: RZ(λ) * RY(φ) * RZ(θ)    # universal Z-Y decomposition
+U4 = lambda α, θ, φ, λ: Ph(α) * U(θ, φ, λ)   # universal Z-Y decomposition with global phase
+XX = lambda φ: Gate([   # exp(-i*(φ/2)*(X@X))
+  [cos(φ/2), 0, 0, -i*sin(φ/2)],
+  [0, cos(φ/2), -i*sin(φ/2), 0],
+  [0, -i*sin(φ/2), cos(φ/2), 0],
+  [-i*sin(φ/2), 0, 0, cos(φ/2)],
 ])
-RZ = lambda theta: Gate([     # alter phase, e^(-i*Z*theta/2)
-  [e^(-i*theta/2), 0],
-  [0, e^(i*theta/2)],
+YY = lambda φ: Gate([   # exp(-i*(φ/2)*(Y@Y))
+  [cos(φ/2), 0, 0, i*sin(φ/2)],
+  [0, cos(φ/2), -i*sin(φ/2), 0],
+  [0, -i*sin(φ/2), cos(φ/2), 0],
+  [i*sin(φ/2), 0, 0, cos(φ/2)],
 ])
-RZ1 = lambda theta: Gate([    # another form of RZ except a g_phase of e^(i*theta/2)
-  [1, 0],
-  [0, e^(i*theta)],
+ZZ = lambda φ: Gate([   # exp(-i*(φ/2)*(Z@Z))
+  [e^(-i*φ/2), 0, 0, 0],
+  [0, e^(i*φ/2), 0, 0],
+  [0, 0, e^(i*φ/2), 0],
+  [0, 0, 0, e^(-i*φ/2)],
 ])
-U = lambda theta, phi, lmbd: Gate([                                                     # universal Z-Y decomposition
-  [          cos(theta/2), -(e^(i* lmbd)     *sin(theta/2))],
-  [e^(i*phi)*sin(theta/2),   e^(i*(lmbd+phi))*cos(theta/2)],
-])
-U1 = lambda alpha, beta, gamma, delta: Ph(alpha) * RZ(beta) * RY(gamma) * RZ(delta)     # universal Z-Y decomposition with global phase
-SWAP = Gate([
+XY = lambda φ: Gate([   # exp(-i*(φ/2)*(Y@Y))
   [1, 0, 0, 0],
-  [0, 0, 1, 0],
+  [0, cos(φ/2), -i*sin(φ/2), 0],
+  [0, -i*sin(φ/2), cos(φ/2), 0],
+  [0, 0, 0, 1],
+])
+Givens = lambda θ: Gate([    # exp(-i*(θ/2)*(Y@X-X@Y)), Givens rotation gate
+  [1, 0, 0, 0],
+  [0, cos(θ), -sin(θ), 0],
+  [0, -sin(θ), cos(θ), 0],
+  [0, 0, 0, 1],
+])
+FSim = lambda θ, φ: Gate([   # fermionic simulation gate
+  [1, 0, 0, 0],
+  [0, cos(θ), -i*sin(θ), 0],
+  [0, -i*sin(θ), cos(θ), 0],
+  [0, 0, 0, e^(-i*φ)],
+])
+CNOT = CX = Gate([      # make entanglement
+  [1, 0, 0, 0],
   [0, 1, 0, 0],
   [0, 0, 0, 1],
-])
-iSWAP = Gate([                # SWAP while flip relative phase 
-  [1, 0, 0, 0],
-  [0, 0, i, 0],
-  [0, i, 0, 0],
-  [0, 0, 0, 1],
-])
-fSWAP = Gate([
-  [1, 0, 0,  0],
-  [0, 0, 1,  0],
-  [0, 1, 0,  0],
-  [0, 0, 0, -1],
-])
-CNOT = CX = Gate([            # make entanglement
-  [1, 0, 0, 0],
-  [0, 1, 0, 0],
-  [0, 0, 0, 1],
   [0, 0, 1, 0],
 ])
-DCNOT = Gate([
+rCNOT = Gate([          # reversed CNOT
   [1, 0, 0, 0],
-  [0, 0, 1, 0],
   [0, 0, 0, 1],
+  [0, 0, 1, 0],
   [0, 1, 0, 0],
 ])
 CZ = Gate([
@@ -504,7 +546,7 @@ CZ = Gate([
   [0, 0, 1,  0],
   [0, 0, 0, -1],
 ])
-CCNOT = Toffoli = Gate([
+Toffoli = CCNOT = Gate([
   [1, 0, 0, 0, 0, 0, 0, 0],
   [0, 1, 0, 0, 0, 0, 0, 0],
   [0, 0, 1, 0, 0, 0, 0, 0],
@@ -514,10 +556,55 @@ CCNOT = Toffoli = Gate([
   [0, 0, 0, 0, 0, 0, 0, 1],
   [0, 0, 0, 0, 0, 0, 1, 0],
 ])
-CNOTNOT = (I @ SWAP) * (CNOT @ I) * (I @ SWAP) * (CNOT @ I)
+SWAP = Gate([
+  [1, 0, 0, 0],
+  [0, 0, 1, 0],
+  [0, 1, 0, 0],
+  [0, 0, 0, 1],
+])
+SWAP_ = lambda α: Gate([  # SWAP raised to a power
+  [1, 0, 0, 0],
+  [0, (1+(e^(i*π*α)))/2, (1-(e^(i*π*α)))/2, 0],
+  [0, (1-(e^(i*π*α)))/2, (1+(e^(i*π*α)))/2, 0],
+  [0, 0, 0, 1],
+])
+iSWAP = Gate([            # SWAP while flip relative phase 
+  [1, 0, 0, 0],
+  [0, 0, i, 0],
+  [0, i, 0, 0],
+  [0, 0, 0, 1],
+])
+iSWAP_ = lambda α: Gate([ # iSWAP raised to a power
+  [1, 0, 0, 0],
+  [0, (1+(e^(i*π*α)))/2*i, (1-(e^(i*π*α)))/2*i, 0],
+  [0, (1-(e^(i*π*α)))/2*i, (1+(e^(i*π*α)))/2*i, 0],
+  [0, 0, 0, 1],
+])
+PSWAP_ = lambda φ: Gate([ # phase SWAP
+  [1, 0, 0, 0],
+  [0, 0, e^(i*φ), 0],
+  [0, e^(i*φ), 0, 0],
+  [0, 0, 0, 1],
+])
+fSWAP = Gate([
+  [1, 0, 0,  0],
+  [0, 0, 1,  0],
+  [0, 1, 0,  0],
+  [0, 0, 0, -1],
+])
+CSWAP = Fredkin = Gate([
+  [1, 0, 0, 0, 0, 0, 0, 0],
+  [0, 1, 0, 0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0, 0, 0, 0],
+  [0, 0, 0, 1, 0, 0, 0, 0],
+  [0, 0, 0, 0, 1, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 1, 0],
+  [0, 0, 0, 0, 0, 1, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 1],
+])
 
-Is = { }                      # identity gate caching
-def get_I(n:int) -> Gate:
+Is = { }    # identity gate caching
+def get_I(n: int) -> Gate:
   if n not in Is: Is[n] = I @ n
   return Is[n]
 
@@ -547,15 +634,17 @@ def v(string: str) -> State:
 
 v0 = State.zero()   # |0>
 v1 = State.one()    # |1>
-h0 = H | v0         # |+>
-h1 = H | v1         # |->
+h0 = H | v0         # |+> = |0>+|1>
+h1 = H | v1         # |-> = |0>-|1>
+g0 = S | h0         # |i> = |0>+i|1>
+g1 = S | h1         # |-i> = |0>-i|1>
 bell_state = CNOT * (H @ I) | State.zero(2)   # |00>+|11>
 ghz_state = (I @ CNOT) * (CNOT @ I) * (H @ I @ I) | State.zero(3)   # |000>+|111>
 
 
 ''' Measure '''
 
-Measure = lambda n=1000: (lambda: n)
+Measure = lambda shot=1000: (lambda: shot)
 M0 = MeasureOp([
   [1, 0],
   [0, 0],
@@ -626,26 +715,26 @@ def QFT(n_qubits=2, run_circuit=True) -> Gate:
         - a single qubit classic state (eg. |0>) will be decomposed to a series Σi wi|i> of basis |i>, where weight vector wi is periodic in phase
         - a superposition state (eg. a|110>+b|011>) will be decomposed to a series ΣjΣi wji|i> of basis |i>, where weight matrix wij is periodic in phase along both axis
     The formula:
-      |j> = (Σk e^(2*pi*i*(j*k/N))|k>) / sqrt(N), where N=2**k
+      |j> = (Σk e^(2*π*i*(j*k/N))|k>) / sqrt(N), where N=2**k
     The unitary:
       [  1    1       1     ...    1
          1    w      w^2    ...  w^(N-1)
          1   w^2     w^4    ... w^2(N-1)
          ...
          1 w^(N-1) w^2(N-1) ... w^(N-1)^2 ]
-    where w = e^(2*pi*i/N) is N=2^n equal devision of the circumference
+    where w = e^(2*π*i/N) is N=2^n equal devision of the circumference
   '''
   assert isinstance(n_qubits, int) and n_qubits >= 1, f'n_qubits should be an integer >=1 but got {n_qubits}'
 
   if run_circuit:
     '''
-      Rk = P(2*pi/2^k), 2^k equal devision of the circumference
+      Rk = P(2*π/2^k), 2^k equal devision of the circumference
         [ 1        0
-          0  e^(2*pi*i/2^k) ]
+          0  e^(2*π*i/2^k) ]
     '''
 
     n = n_qubits  # N is the phase angle unit (kind of FT resolution)
-    CRk = { k: Control(P(2*pi/2**k)) for k in range(2, n+1) }   # CR2 ~ CRn
+    CRk = { k: Control(P(2*π/2**k)) for k in range(2, n+1) }   # CR2 ~ CRn
     # caching to reuse gates
     sSWAPs = { }
     def get_sSWAP(n:int) -> Gate:
@@ -681,7 +770,7 @@ def QFT(n_qubits=2, run_circuit=True) -> Gate:
   else:   # a cheaty way that constructs the unitary directly :(
     N = 2**n_qubits
     u = np.empty([N, N], dtype=DTYPE)
-    w = e^(2*pi*i/N)
+    w = e^(2*π*i/N)
     for j in range(N):
       for k in range(N):
         u[j, k] = w**(j*k)
@@ -697,8 +786,8 @@ def phase_estimate(u:Gate, phi:State=None, n_prec:int=4) -> State:
       - https://zhuanlan.zhihu.com/p/84568388
       - https://blog.csdn.net/qq_45777142/article/details/109904362
     The formula:
-      U|phi> = e^(2*pi*i*theta)|phi>
-    note that eigen value is a global phase, it can be further reduced to the phase angle `theta`
+      U|phi> = e^(2*π*i*θ)|phi>
+    note that eigen value is a global phase, it can be further reduced to the phase angle `θ`
     NOTE: 总之，相位估计可以给定一个特征向量的情况下，估计一个酉算子的一个对应特征值的相位。
   '''
   assert isinstance(n_prec, int) and n_prec >= 1, 'n_prec should be an integer >=1'
@@ -709,10 +798,10 @@ def phase_estimate(u:Gate, phi:State=None, n_prec:int=4) -> State:
   if phi is None: phi = H | v('0' * u.n_qubits)
 
   '''
-    |0>--H------------------------x--------|0>+e^2*pi*i(2^(t-1)*theta)|1>--|      |             (prec: 0.00..01, 1/2^(t-1))
-            (repeat t times)     ...                                       | iQFT |--|theta>
-    |0>--H--------------x---------|--------|0>+e^2*pi*i(2^1*theta)|1>------|      |             (prec: 0.1, 1/2=0.5)
-    |0>--H-----x--------|---------|--------|0>+e^2*pi*i(2^0*theta)|1>------|      |             (prec: 1)
+    |0>--H------------------------x--------|0>+e^2*π*i(2^(t-1)*θ)|1>--|      |             (prec: 0.00..01, 1/2^(t-1))
+            (repeat t times)     ...                                         | iQFT |--|θ>
+    |0>--H--------------x---------|--------|0>+e^2*π*i(2^1*θ)|1>------|      |             (prec: 0.1, 1/2=0.5)
+    |0>--H-----x--------|---------|--------|0>+e^2*π*i(2^0*θ)|1>------|      |             (prec: 1)
     |u>-----|U^2^0|--|U^2^1|--|U^2^(t-1)|--|u>    (aka. |phi> kept unchanged)
   '''
   # apply H set
@@ -732,14 +821,14 @@ def phase_estimate(u:Gate, phi:State=None, n_prec:int=4) -> State:
 
   return c | (v('0' * t) @ phi)
 
-def amplitude_encode(b: np.ndarray) -> State:
+def amplitude_encode(b: ndarray) -> State:
   ''' Amplitude encoding a unit vector b to |b> '''
-  assert (np.linalg.norm(b) - 1.0) < 1e-5, 'b should be a unit vector'
+  assert (np.linalg.norm(b) - 1.0) < EPS, 'b should be a unit vector'
 
-  theta = 2 * np.arccos(b[0])
-  return (Z if b[1] < 0 else I) * RY(theta) | v0
+  θ = 2 * np.arccos(b[0])
+  return (Z if b[1] < 0 else I) * RY(θ) | v0
 
-def HHL(A: np.ndarray, b: np.ndarray, t0=2*pi, r=4) -> State:
+def HHL(A: ndarray, b: ndarray, t0=2*π, r=4) -> State:
   '''
     Solve linear equations in a quantum manner:
       - https://arxiv.org/abs/1110.2232
@@ -748,15 +837,15 @@ def HHL(A: np.ndarray, b: np.ndarray, t0=2*pi, r=4) -> State:
     given in essay "Quantum Circuit Design for Solving Linear Systems of Equations" by Yudong Cao, et al.
       - https://arxiv.org/abs/0811.3171
 
-    q0: |0>──────────────────────────────────────────────┤RY(pi/8)├┤RY(pi/16)├─────────
-    q1: |0>─┤H├───────────────────■───────X──────■───┤H├X─────■────────┼─────┼        ┼
-    q2: |0>─┤H├────■──────────────┼───────X┤H├┤S.dag├───X──────────────■─────|U.dagger┼
-    q3: |b>─┤exp(iA(t0/4))├┤exp(iA(t0/2))├───────────────────────────────────┼        ┼
+    q0: |0>───────────────────────────────────────────────┤RY(π/8)├┤RY(π/16)├─────────
+    q1: |0>─┤H├───────────────────■───────X──────■───┤H├X─────■───────┼─────┼        ┼
+    q2: |0>─┤H├────■──────────────┼───────X┤H├┤S.dag├───X─────────────■─────|U.dagger┼
+    q3: |b>─┤exp(iA(t0/4))├┤exp(iA(t0/2))├──────────────────────────────────┼        ┼
   '''
   import scipy.linalg as spl
 
   assert np.allclose(A, A.conj().T), 'A should be a hermitian'
-  assert (np.linalg.norm(b) - 1.0) < 1e-5, 'b should be a unit vector'
+  assert (np.linalg.norm(b) - 1.0) < EPS, 'b should be a unit vector'
 
   ''' enc |b> '''
   enc_b = v('000') @ amplitude_encode(b)
@@ -783,9 +872,9 @@ def HHL(A: np.ndarray, b: np.ndarray, t0=2*pi, r=4) -> State:
 
   ''' RY '''
   swap01 = SWAP @ get_I(2)
-  u =  swap01 * (Control(RY(2*pi/2**r)) @ get_I(2)) * swap01
+  u =  swap01 * (Control(RY(2*π/2**r)) @ get_I(2)) * swap01
   u << swap12
-  u << swap01 * (Control(RY(pi/2**r)) @ get_I(2)) * swap01
+  u << swap01 * (Control(RY(π/2**r)) @ get_I(2)) * swap01
   u << swap12
 
   CR = u
