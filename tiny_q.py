@@ -130,9 +130,20 @@ class State(Meta):
     v = [0] * 2**n ; v[-1] = 1
     return cls(v)
 
+  @classmethod
+  def rand(cls, n:int=1) -> State:
+    assert n >= 1, 'n_qubit should >= 1'
+    assert isinstance(n, int), 'n_qubit should be int'
+    v = np.empty([2**n], dtype=np.complex64)
+    v.real = np.random.uniform(low=-1, high=1, size=[2**n])
+    v.imag = np.random.uniform(low=-1, high=1, size=[2**n])
+    v = v / np.linalg.norm(v)
+    return cls(v)
+
   def __eq__(self, other: Any) -> bool:
     ''' v0 == v1: state equality ignores the global phase '''
     if not isinstance(other, State): raise NotImplemented
+    assert self.n_qubits == other.n_qubits, f'n_qubits mismatch: self ({self.n_qubits}) != other ({other.n_qubits})'
 
     c = self.v / other.v            # assume c * |v> = |w>, where 'c' is a complex number
     vals = c[~np.isnan(c)]          # if vals is consistent to only one value, then 'c' is a valid global phase
@@ -188,6 +199,18 @@ class State(Meta):
       return np.abs(self.dagger.v @ other.dagger.v @ other.v @ self.v)
     else:
       raise TypeError(f'other should be a MeasureOp or a State, or the Measure object, but got {type(other)}({other})')
+
+  def __or__(self, other: Union[Gate, State]) -> Union[State, complex]:
+    '''
+      v0 | u: project unitary to a <bra| vector
+      v0 | v1: inner product, projective expectation
+    '''
+    assert isinstance(other, (Gate, State)), f'other should be a Gate or State, but got {type(other)}'
+    assert self.n_qubits == other.n_qubits, f'n_qubits mismatch: self ({self.n_qubits}) != other ({other.n_qubits})'
+    if isinstance(other, Gate):
+      return State(np.matmul(self.v, other.v))
+    if isinstance(other, State):
+      return np.dot(self.dagger.v, other.v)
 
   @property
   def cval(self) -> int:
@@ -344,7 +367,7 @@ class Gate(Meta):
     ''' H * X = HX: compose two unitary transforms up '''
     if other is Meta.Null: return self
     assert isinstance(other, Gate), f'other should be a Gate, but got {type(other)}'
-    assert self.n_qubits == other.n_qubits, f'qubit count mismatch {self.n_qubits} != {other.n_qubits}'
+    assert self.n_qubits == other.n_qubits, f'n_qubits mismatch: self ({self.n_qubits}) != other ({other.n_qubits})'
     return Gate(self.v @ other.v)
 
   def __rmul__(self, other: Meta.Null) -> Gate:
@@ -359,6 +382,7 @@ class Gate(Meta):
         u = (gates * other * some) * u
     '''
     assert isinstance(other, Gate), f'other should be a Gate, but got {type(other)}'
+    assert self.n_qubits == other.n_qubits, f'n_qubits mismatch: self ({self.n_qubits}) != other ({other.n_qubits})'
     self.v = (other * self).v
     return self
 

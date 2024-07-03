@@ -101,6 +101,11 @@ u = gate1 << gate2 << gate3
 # use pipe | for gate application
 # q = Gate | State
 q = X | v0
+# use pipe | for pauli expectation or state fidelity
+# E = State | Gate | State
+E = State.rand() | (X @ Z) | State.rand()
+# fid = State | State
+fid = (X | v('01')) | (H | v('01'))
 
 # use > for virtual measure, the state does not really change
 # r = State > Measure, single shot
@@ -128,6 +133,7 @@ class Meta:
 class State(Meta):
   .zero() -> State          # alloc a |0> string
   .one() -> State           # alloc a |1> string
+  .rand() -> State          # get a random state (usually as test stub)
   .__eq__() -> bool         # state equality (ignoring global phase)
   .__matmul__() -> State    # v0 @ v1: state expansion
   .__lt__() -> Union        # v0 < Measure, real measure with state collapse

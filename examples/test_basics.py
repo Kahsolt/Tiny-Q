@@ -46,6 +46,15 @@ h0.info('|+>')
 h1 = H | v1
 h1.info('|->')
 
+## use pipe operator '|' for pauli expectation or state fidelity
+qr = State.rand(2)
+exp = qr | (Y @ Z) | qr
+print('exp:', exp)
+fid = (RX(0.3) | v0) | (RY(0.3) | v0)
+print('fid:', fid)
+print()
+
+
 # global phase it omittable
 h1_gp = Ph(pi/3) | h1
 h1_gp.info('e^-i(pi/3)|-> (global phase)')
